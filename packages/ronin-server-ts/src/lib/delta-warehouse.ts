@@ -48,10 +48,14 @@ export interface RawBronzeRow {
 }
 
 /** Compaction/vacuum options. `vacuum` reclaims unreferenced files; retention defaults to a
- * safe 168h (7d, enforced) to preserve time-travel; `force` drops enforcement (dev/tests). */
-export interface OptimizeOpts { vacuum?: boolean; retentionHours?: number; force?: boolean }
+ * safe 168h (7d, enforced) to preserve time-travel; `force` drops enforcement (dev/tests).
+ * `zorder`: explicit columns to cluster by, or `false` for plain compaction. Omitted →
+ * auto: cluster by `id` where the table has one (Bronze, audit), else plain compaction. */
+export interface OptimizeOpts { vacuum?: boolean; retentionHours?: number; force?: boolean; zorder?: string[] | false }
 function optimizeBody(o?: OptimizeOpts): Record<string, unknown> {
-  return { vacuum: o?.vacuum ?? false, retention_hours: o?.retentionHours ?? 168, force: o?.force ?? false };
+  const body: Record<string, unknown> = { vacuum: o?.vacuum ?? false, retention_hours: o?.retentionHours ?? 168, force: o?.force ?? false };
+  if (o?.zorder !== undefined) body.zorder = o.zorder; // omit → sidecar auto (cluster by id)
+  return body;
 }
 
 /** Result of a validated Bronze write (valid → Bronze; invalid → dead-letter queue). */

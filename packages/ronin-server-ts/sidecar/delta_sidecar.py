@@ -235,15 +235,28 @@ def do_validate(req):
     return {"results": results}
 
 
-def _optimize_table(path, vacuum=False, retention_hours=168, force=False):
-    """Compact small files in one Delta table; optionally vacuum unreferenced files.
-    Append-per-write produces many small files; periodic compaction keeps scans fast.
-    Vacuum defaults to a SAFE 168h (7-day) retention with enforcement ON (preserves
-    time-travel + concurrent-reader safety); `force` drops enforcement for dev/tests."""
+def _zorder_columns(dt, zorder):
+    """Resolve Z-order columns: explicit list, False = none (plain compact), or auto
+    (cluster by `id` when the table has one — point reads / _id / current-version-by-id
+    then skip files via min/max stats). Tables without `id` (terminology) just compact."""
+    if zorder is False:
+        return None
+    if isinstance(zorder, (list, tuple)) and len(zorder) > 0:
+        return list(zorder)
+    cols = {f.name for f in dt.schema().fields}
+    return ["id"] if "id" in cols else None
+
+
+def _optimize_table(path, vacuum=False, retention_hours=168, force=False, zorder=None):
+    """Compact (+ optional Z-order cluster) one Delta table; optionally vacuum unreferenced
+    files. Append-per-write makes many small files; compaction keeps scans fast and Z-order
+    by `id` co-locates a resource's versions so id-keyed access skips files. Vacuum defaults
+    to a SAFE 168h (7-day) retention, enforcement ON (preserves time-travel); `force` drops it."""
     dt = DeltaTable(path)
     before = len(dt.file_uris())
-    metrics = dt.optimize.compact()
-    out = {"files_before": before, "compact": getattr(metrics, "__dict__", str(metrics))}
+    zcols = _zorder_columns(dt, zorder)
+    metrics = dt.optimize.z_order(zcols) if zcols else dt.optimize.compact()
+    out = {"files_before": before, "zorder": zcols, "metrics": metrics}
     if vacuum:
         removed = dt.vacuum(retention_hours=retention_hours, dry_run=False,
                             enforce_retention_duration=not force)
@@ -253,9 +266,10 @@ def _optimize_table(path, vacuum=False, retention_hours=168, force=False):
 
 
 def do_optimize(req):
-    """Compact (+ optional vacuum) a single Delta table by path."""
+    """Compact (+ optional Z-order + vacuum) a single Delta table by path."""
     return _optimize_table(req["table_path"], vacuum=req.get("vacuum", False),
-                           retention_hours=req.get("retention_hours", 168), force=req.get("force", False))
+                           retention_hours=req.get("retention_hours", 168), force=req.get("force", False),
+                           zorder=req.get("zorder"))
 
 
 def _find_delta_tables(base):
@@ -269,18 +283,19 @@ def _find_delta_tables(base):
 
 
 def do_optimize_all(req):
-    """Compact (+ optional vacuum) EVERY Delta table under the store base — covers Bronze
-    resource tables, audit, terminology, conformance, dead-letter, pending. Local-FS bases
-    only (object-store enumeration is a follow-up)."""
+    """Compact (+ Z-order cluster by `id` where present + optional vacuum) EVERY Delta table
+    under the store base — covers Bronze resource tables, audit, terminology, conformance,
+    dead-letter, pending. Local-FS bases only (object-store enumeration is a follow-up)."""
     base = req.get("base") or _BASE
     if _is_object_store(base):
         raise RuntimeError(f"optimize-all requires a local base; got object store '{base}' (per-table /optimize instead)")
     vacuum, retention_hours, force = req.get("vacuum", False), req.get("retention_hours", 168), req.get("force", False)
+    zorder = req.get("zorder")
     results = {}
     for path in _find_delta_tables(base):
         rel = os.path.relpath(path, base)
         try:
-            results[rel] = _optimize_table(path, vacuum=vacuum, retention_hours=retention_hours, force=force)
+            results[rel] = _optimize_table(path, vacuum=vacuum, retention_hours=retention_hours, force=force, zorder=zorder)
         except Exception as e:
             results[rel] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
     return {"base": base, "tables_optimized": len(results), "results": results}

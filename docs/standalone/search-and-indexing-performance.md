@@ -39,15 +39,22 @@ Correct and fine for dev/synthetic volumes. The scaling costs are predictable.
    - `lib/maintenance.ts` — `runMaintenance` + opt-in single-flight `startMaintenanceScheduler`
      (`RONIN_MAINTENANCE_INTERVAL_MIN`, `RONIN_VACUUM_ENABLED`, `RONIN_VACUUM_RETENTION_HOURS`),
      wired into the server entry.
-   - CLI `optimize [--vacuum] [--retention-hours N] [--force] [tables…]`. Tested (`delta-optimize`).
-   - Follow-ups: object-store base enumeration (currently local-FS walk); Z-order/clustering.
+   - CLI `optimize [--vacuum] [--retention-hours N] [--force] [--no-zorder] [tables…]`. Tested.
+   - Follow-up: object-store base enumeration (currently local-FS walk).
+
+2a. **Z-order / clustering by `id` — ✅ DONE.** delta-rs (`deltalake` 1.6.1) exposes
+   `optimize.z_order(columns)`. `optimize-all` auto-clusters by `id` on every table that has an
+   `id` column (Bronze resource tables + audit) and falls back to plain `compact()` for tables
+   without one (terminology). Clustering co-locates a resource's rows so id-keyed access — point
+   reads, `_id`, and the current-version window (`PARTITION BY id`) — skips files via min/max
+   stats. Override: `OptimizeOpts.zorder` (explicit columns or `false`); CLI `--no-zorder`.
+   Runs as part of OPTIMIZE — no extra pass over #2.
 
 3. **File-skipping via column statistics — already on; keep the layout favorable.** Delta
    keeps per-file min/max stats for leading scalar columns. Predicates on `id` and
-   `last_updated` (point reads, `_lastUpdated`, `_id`) can skip files. Keep `id`/`version_id`/
-   `last_updated` as leading columns (they are) and avoid wasting stats on the big `body_json`
-   string. If delta-rs Z-order/clustering is available, clustering by `id` tightens
-   point-read skipping.
+   `last_updated` (point reads, `_lastUpdated`, `_id`) can skip files — and Z-order by `id`
+   (#2a) tightens that skipping. Keep `id`/`version_id`/`last_updated` as leading columns
+   (they are) and avoid wasting stats on the big `body_json` string.
 
 ## What does NOT help (don't add)
 

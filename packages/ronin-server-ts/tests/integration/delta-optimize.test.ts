@@ -1,7 +1,8 @@
 /**
- * Store maintenance (Priority #1): Delta OPTIMIZE + VACUUM across the whole store.
- * Append-per-write makes many small files; optimize-all compacts them and vacuum reclaims
- * tombstoned files — while every table stays queryable. Gated on the sidecar.
+ * Store maintenance (Priority #1): Delta OPTIMIZE + Z-ORDER + VACUUM across the whole store.
+ * Append-per-write makes many small files; optimize-all compacts them, clusters Bronze by `id`
+ * (data skipping for id-keyed access), and vacuum reclaims tombstoned files — while every table
+ * stays queryable. Gated on the sidecar.
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { DeltaWarehouse } from "../../src/lib/delta-warehouse.js";
@@ -26,13 +27,21 @@ describe.skipIf(!SIDECAR)("store maintenance — optimize + vacuum", () => {
     }
   });
 
-  it("optimize-all compacts many small files into few (Bronze + any other tables)", async () => {
+  it("optimize-all compacts many small files into few + clusters Bronze by id", async () => {
     const report: any = await wh.optimizeAll({ vacuum: false });
     expect(report.tables_optimized).toBeGreaterThanOrEqual(1);
     const patient = report.results["bronze/patient"];
     expect(patient).toBeTruthy();
     expect(patient.files_before).toBeGreaterThanOrEqual(20); // ~25 small files
     expect(patient.files_after).toBeLessThan(patient.files_before); // compacted
+    expect(patient.zorder).toEqual(["id"]); // auto-clustered by id (Bronze has an id column)
+  });
+
+  it("--no-zorder falls back to plain compaction (no clustering)", async () => {
+    // create a couple more small files first so there is something to compact
+    for (let i = 100; i < 104; i++) await req("POST", "/Patient", { resourceType: "Patient", id: `opt${ts}-${i}` });
+    const report: any = await wh.optimizeAll({ vacuum: false, zorder: false });
+    expect(report.results["bronze/patient"].zorder).toBeNull(); // plain compact, no z-order
   });
 
   it("the table is still fully queryable after optimize", async () => {
