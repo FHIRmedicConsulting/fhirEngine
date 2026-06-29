@@ -4,7 +4,7 @@
  * Requires the delta sidecar (sidecar/delta_sidecar.py) running. Run:
  *   python sidecar/delta_sidecar.py --port 8077 --base ./.delta &
  *   RONIN_DELTA_SIDECAR_URL=http://127.0.0.1:8077 RONIN_DELTA_BASE=./.delta \
- *     npx tsx src/server-delta.ts
+ *     npx tsx src/server.ts
  */
 
 import { serve } from "@hono/node-server";
