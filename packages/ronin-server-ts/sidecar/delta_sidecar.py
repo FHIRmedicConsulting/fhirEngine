@@ -235,20 +235,55 @@ def do_validate(req):
     return {"results": results}
 
 
-def do_optimize(req):
-    """SPIKE (for later, not auto-scheduled): compact small files + optional vacuum.
+def _optimize_table(path, vacuum=False, retention_hours=168, force=False):
+    """Compact small files in one Delta table; optionally vacuum unreferenced files.
     Append-per-write produces many small files; periodic compaction keeps scans fast.
-    Wiring (when/how often to run) is deferred — this is the manual capability."""
-    path = req["table_path"]
+    Vacuum defaults to a SAFE 168h (7-day) retention with enforcement ON (preserves
+    time-travel + concurrent-reader safety); `force` drops enforcement for dev/tests."""
     dt = DeltaTable(path)
+    before = len(dt.file_uris())
     metrics = dt.optimize.compact()
-    out = {"compact": getattr(metrics, "__dict__", str(metrics))}
-    if req.get("vacuum"):
-        # retention 0 + disabled enforcement is for DEV only (drops all unreferenced files).
-        removed = dt.vacuum(retention_hours=req.get("retention_hours", 168),
-                            dry_run=False, enforce_retention_duration=False)
+    out = {"files_before": before, "compact": getattr(metrics, "__dict__", str(metrics))}
+    if vacuum:
+        removed = dt.vacuum(retention_hours=retention_hours, dry_run=False,
+                            enforce_retention_duration=not force)
         out["vacuumed_files"] = len(removed)
+    out["files_after"] = len(DeltaTable(path).file_uris())
     return out
+
+
+def do_optimize(req):
+    """Compact (+ optional vacuum) a single Delta table by path."""
+    return _optimize_table(req["table_path"], vacuum=req.get("vacuum", False),
+                           retention_hours=req.get("retention_hours", 168), force=req.get("force", False))
+
+
+def _find_delta_tables(base):
+    """Walk a local base for Delta tables (dirs containing a `_delta_log/`)."""
+    tables = []
+    for root, dirs, _files in os.walk(base):
+        if "_delta_log" in dirs:
+            tables.append(root)
+            dirs[:] = [d for d in dirs if d != "_delta_log"]  # don't descend into the log
+    return sorted(tables)
+
+
+def do_optimize_all(req):
+    """Compact (+ optional vacuum) EVERY Delta table under the store base — covers Bronze
+    resource tables, audit, terminology, conformance, dead-letter, pending. Local-FS bases
+    only (object-store enumeration is a follow-up)."""
+    base = req.get("base") or _BASE
+    if _is_object_store(base):
+        raise RuntimeError(f"optimize-all requires a local base; got object store '{base}' (per-table /optimize instead)")
+    vacuum, retention_hours, force = req.get("vacuum", False), req.get("retention_hours", 168), req.get("force", False)
+    results = {}
+    for path in _find_delta_tables(base):
+        rel = os.path.relpath(path, base)
+        try:
+            results[rel] = _optimize_table(path, vacuum=vacuum, retention_hours=retention_hours, force=force)
+        except Exception as e:
+            results[rel] = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+    return {"base": base, "tables_optimized": len(results), "results": results}
 
 
 def do_delete(req):
@@ -265,7 +300,8 @@ def do_delete(req):
 
 
 ROUTES = {"/write": do_write, "/merge": do_merge, "/query": do_query,
-          "/validate": do_validate, "/optimize": do_optimize, "/delete": do_delete}
+          "/validate": do_validate, "/optimize": do_optimize, "/optimize-all": do_optimize_all,
+          "/delete": do_delete}
 
 
 class Handler(BaseHTTPRequestHandler):

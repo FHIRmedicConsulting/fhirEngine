@@ -11,6 +11,7 @@ import { serve } from "@hono/node-server";
 import pino from "pino";
 import { DeltaWarehouse } from "./lib/delta-warehouse.js";
 import { createDeltaApp } from "./app.js";
+import { startMaintenanceScheduler } from "./lib/maintenance.js";
 
 const log = pino({ level: process.env.RONIN_LOG_LEVEL ?? "info" });
 
@@ -29,6 +30,10 @@ async function main(): Promise<void> {
   serve({ fetch: app.fetch, port }, (info) =>
     log.info({ port: info.port, sidecarUrl, base }, "ronin-standalone (delta) listening"),
   );
+
+  // Opt-in store maintenance: Delta compaction (+ optional vacuum) on an interval
+  // (RONIN_MAINTENANCE_INTERVAL_MIN). Keeps small files in check as the store grows.
+  startMaintenanceScheduler(warehouse, log);
 }
 
 main().catch((err) => {

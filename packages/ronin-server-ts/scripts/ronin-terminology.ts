@@ -87,11 +87,22 @@ async function main() {
       break;
     }
     case "optimize": {
-      // Compact the terminology tables (append-per-batch leaves many small files).
-      const tables = rest.length ? rest : ["codesystem_concept", "valueset_expansion", "codesystem_header"];
-      const out: Record<string, unknown> = {};
-      for (const t of tables) out[t] = await wh.optimizeTerminology(t, { vacuum: false });
-      console.log(JSON.stringify(out));
+      // Compact small files (+ optional vacuum). Default: ALL tables in the store.
+      // Flags: --vacuum  --retention-hours N (default 168)  --force (drop retention enforcement; dev)
+      // Named terminology tables only: optimize codesystem_concept valueset_expansion …
+      const opts = {
+        vacuum: rest.includes("--vacuum"),
+        retentionHours: flag(rest, "--retention-hours") ? Number(flag(rest, "--retention-hours")) : 168,
+        force: rest.includes("--force"),
+      };
+      const tables = rest.filter((a) => !a.startsWith("--") && !/^\d+$/.test(a));
+      if (tables.length === 0) {
+        console.log(JSON.stringify(await wh.optimizeAll(opts), null, 2)); // whole store
+      } else {
+        const out: Record<string, unknown> = {};
+        for (const t of tables) out[t] = await wh.optimizeTerminology(t, opts);
+        console.log(JSON.stringify(out, null, 2));
+      }
       break;
     }
     case "update": {
@@ -110,7 +121,7 @@ async function main() {
         "  pull-ig-valuesets <packageDir>           (pull IG's external VSAC sets once; op run)",
         "  expand-vsac <valueSetOid> [oid...]      (UMLS_API_KEY via op run)",
         "  check-updates                            (report loaded versions)",
-        "  optimize [table...]                      (compact terminology Delta tables)",
+        "  optimize [--vacuum] [--retention-hours N] [--force] [table...]  (compact whole store; tables = terminology only)",
         "  update <configFile.json>                 (operator-picked sources/modes)",
         "  reconcile-terminology                    (drain pending-terminology queue)",
       ].join("\n"));

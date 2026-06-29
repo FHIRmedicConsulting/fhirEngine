@@ -29,11 +29,18 @@ Correct and fine for dev/synthetic volumes. The scaling costs are predictable.
      (single-writer). Or keep a separate current-version projection. Trade-off to decide with
      the storage-topology ADR.
 
-2. **Compaction / OPTIMIZE — high value, low effort, do soon.** Append-per-write creates one
-   small file per create/update → file count explodes → scans get slow. delta-rs supports
-   `optimize.compact()` (bin-packing) and `vacuum` (drop tombstoned files past retention).
-   Expose both via the sidecar and run periodically (or after N writes). This is the single
-   cheapest production win and is independent of topology.
+2. **Compaction / OPTIMIZE + VACUUM — ✅ DONE (Priority #1).** Append-per-write creates one
+   small file per create/update/audit/terminology-batch → file count explodes → scans slow.
+   Store-wide maintenance shipped:
+   - Sidecar `/optimize` (one table) + `/optimize-all` (walks the base, compacts **every**
+     Delta table — Bronze per type, audit, terminology, conformance, dead-letter, pending),
+     each with optional `vacuum` (safe **168h enforced** retention by default; `force` for dev).
+   - `DeltaWarehouse.optimizeAll/optimize/optimizeTerminology` (`OptimizeOpts`).
+   - `lib/maintenance.ts` — `runMaintenance` + opt-in single-flight `startMaintenanceScheduler`
+     (`RONIN_MAINTENANCE_INTERVAL_MIN`, `RONIN_VACUUM_ENABLED`, `RONIN_VACUUM_RETENTION_HOURS`),
+     wired into the server entry.
+   - CLI `optimize [--vacuum] [--retention-hours N] [--force] [tables…]`. Tested (`delta-optimize`).
+   - Follow-ups: object-store base enumeration (currently local-FS walk); Z-order/clustering.
 
 3. **File-skipping via column statistics — already on; keep the layout favorable.** Delta
    keeps per-file min/max stats for leading scalar columns. Predicates on `id` and

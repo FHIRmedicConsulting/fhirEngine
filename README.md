@@ -68,6 +68,7 @@ Provisioning CLI: `scripts/ronin-terminology.ts` (`install-ig`, `load-terminolog
 | `RONIN_CONSENT_ENFORCEMENT` | read-time consent + DS4P label enforcement |
 | `RONIN_QUARANTINE_ON_UNKNOWN` | quarantine + auto-resolve unknown terminology |
 | `UMLS_API_KEY` | VSAC `$expand` (inject via 1Password `op run`) |
+| `RONIN_MAINTENANCE_INTERVAL_MIN` | opt-in periodic Delta compaction (+ `RONIN_VACUUM_ENABLED`, `RONIN_VACUUM_RETENTION_HOURS`) |
 
 Security controls are **opt-in** (default off for dev); production enablement is a deploy gate.
 

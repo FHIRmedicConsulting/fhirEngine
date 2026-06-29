@@ -47,6 +47,13 @@ export interface RawBronzeRow {
   _ingest_source: string;
 }
 
+/** Compaction/vacuum options. `vacuum` reclaims unreferenced files; retention defaults to a
+ * safe 168h (7d, enforced) to preserve time-travel; `force` drops enforcement (dev/tests). */
+export interface OptimizeOpts { vacuum?: boolean; retentionHours?: number; force?: boolean }
+function optimizeBody(o?: OptimizeOpts): Record<string, unknown> {
+  return { vacuum: o?.vacuum ?? false, retention_hours: o?.retentionHours ?? 168, force: o?.force ?? false };
+}
+
 /** Result of a validated Bronze write (valid → Bronze; invalid → dead-letter queue). */
 export interface BronzeWriteResult {
   written: number;
@@ -196,16 +203,20 @@ export class DeltaWarehouse implements Warehouse {
   }
 
   /**
-   * SPIKE (for later): compact a tier's Delta table (+ optional vacuum). Append-per-write
-   * makes many small files; periodic compaction keeps scans fast. NOT auto-scheduled —
-   * exposed as a manual capability; when/how-often to run is deferred (perf design note).
+   * Compact one tier's Delta table (+ optional vacuum). Append-per-write makes many small
+   * files; periodic compaction keeps scans fast. Vacuum defaults to a SAFE 168h retention
+   * (enforced) preserving time-travel; `force` drops enforcement for dev/tests.
    */
-  async optimize(tier: Tier, resourceType: string, opts?: { vacuum?: boolean; retentionHours?: number }): Promise<unknown> {
-    return this.post("/optimize", {
-      table_path: this.catalog.tablePath(tier, resourceType),
-      vacuum: opts?.vacuum ?? false,
-      retention_hours: opts?.retentionHours ?? 168,
-    });
+  async optimize(tier: Tier, resourceType: string, opts?: OptimizeOpts): Promise<unknown> {
+    return this.post("/optimize", { table_path: this.catalog.tablePath(tier, resourceType), ...optimizeBody(opts) });
+  }
+
+  /**
+   * Compact (+ optional vacuum) EVERY Delta table under the store base — Bronze resource
+   * tables, audit, terminology, conformance, dead-letter, pending. The store maintenance op.
+   */
+  async optimizeAll(opts?: OptimizeOpts): Promise<unknown> {
+    return this.post("/optimize-all", optimizeBody(opts));
   }
 
   /** Register the audit-event store for querying (accounting of disclosures). */
@@ -246,9 +257,9 @@ export class DeltaWarehouse implements Warehouse {
     await this.post("/delete", { table_path: this.catalog.terminologyPath(table), predicate });
   }
 
-  /** Compact a terminology table (+ optional vacuum) — the optimize spike, for a tier-less table. */
-  async optimizeTerminology(table: string, opts?: { vacuum?: boolean }): Promise<unknown> {
-    return this.post("/optimize", { table_path: this.catalog.terminologyPath(table), vacuum: opts?.vacuum ?? false });
+  /** Compact a terminology table (+ optional vacuum), a tier-less table. */
+  async optimizeTerminology(table: string, opts?: OptimizeOpts): Promise<unknown> {
+    return this.post("/optimize", { table_path: this.catalog.terminologyPath(table), ...optimizeBody(opts) });
   }
 
   /** Append a failed-validation record to the dead-letter / failed-message queue. */
