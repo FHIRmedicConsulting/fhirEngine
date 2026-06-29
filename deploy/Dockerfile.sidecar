@@ -1,0 +1,16 @@
+# Delta storage sidecar — delta-rs / DataFusion (ADR-0022 A1). Single-writer.
+# Build context = repo root.
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY packages/ronin-server-ts/sidecar/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY packages/ronin-server-ts/sidecar/delta_sidecar.py .
+
+# Default to a local-volume base; override RONIN_DELTA_BASE with an object-store
+# URI (s3://, gs://, az://) for cloud deployments.
+ENV RONIN_DELTA_SIDECAR_PORT=8077 \
+    RONIN_DELTA_SIDECAR_HOST=0.0.0.0 \
+    RONIN_DELTA_BASE=/data/delta
+EXPOSE 8077
+CMD ["python", "delta_sidecar.py"]

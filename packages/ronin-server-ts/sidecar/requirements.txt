@@ -1,0 +1,6 @@
+# Ronin Delta sidecar — single-engine delta-rs / DataFusion (ADR-0022 A1).
+# Pin majors; QueryBuilder + load_cdf verified on these.
+deltalake>=1.6,<2
+pyarrow>=17
+# R4 Core structural validation prior to Bronze (pydantic; the Python "Zod"). No JVM.
+fhir.resources>=8,<9

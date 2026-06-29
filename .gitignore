@@ -1,0 +1,30 @@
+# --- Secrets: never commit real credential values (*.env.op holds only op:// refs) ---
+.env
+*.env
+
+# --- Dependencies / build output ---
+node_modules/
+dist/
+*.tsbuildinfo
+
+# --- Test/build scratch ---
+*.log
+.DS_Store
+vitest.config.ts.timestamp-*.mjs
+*.tmp
+
+# --- Local Delta stores (operational + any licensed-derived terminology) ---
+delta/
+.delta*/
+delta-prov/
+
+# --- Operator-licensed terminology release files — NEVER commit/redistribute ---
+# (SNOMED CT, LOINC, RxNorm, etc.; loaded under the operator's own license)
+terminologies/
+*.RRF
+sct2_*.txt
+der2_*.txt
+
+# --- Python sidecar venv ---
+sidecar/.venv/
+**/__pycache__/

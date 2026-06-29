@@ -1,0 +1,53 @@
+# RoninStandAlone — self / cloud-hosted (non-Databricks) deployment.
+# Two services on one shared codebase: TS/Hono FHIR server + delta-rs/DataFusion
+# storage sidecar (single-writer). Delta lives on a local volume OR an object store.
+#
+#   Local:  docker compose up --build           (Delta on the `delta-data` volume)
+#   Cloud:  set RONIN_DELTA_BASE=s3://… + creds in .env, then up (no volume needed)
+#
+# ⚠️ No auth/TLS wired yet — SYNTHETIC data only. Wire SMART/UDAP (ADR-0006) + TLS
+#    before any real PHI (see deploy/README.md).
+name: ronin-standalone
+
+services:
+  sidecar:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.sidecar
+    environment:
+      RONIN_DELTA_SIDECAR_PORT: "8077"
+      RONIN_DELTA_BASE: ${RONIN_DELTA_BASE:-/data/delta}
+      # Object-store creds — only needed when RONIN_DELTA_BASE is s3://, gs://, az://
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-}
+      # Single-writer (ADR-0026) on AWS S3 → safe to allow rename without a lock
+      # service. R2/MinIO/GCS use native conditional-put and ignore this.
+      AWS_S3_ALLOW_UNSAFE_RENAME: ${AWS_S3_ALLOW_UNSAFE_RENAME:-}
+      GOOGLE_SERVICE_ACCOUNT: ${GOOGLE_SERVICE_ACCOUNT:-}
+      AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
+      AZURE_STORAGE_ACCOUNT_KEY: ${AZURE_STORAGE_ACCOUNT_KEY:-}
+    volumes:
+      - delta-data:/data/delta   # used in local mode; harmless for object-store mode
+    restart: unless-stopped
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    environment:
+      RONIN_DEPLOY_MODE: self-hosted
+      RONIN_DELTA_SIDECAR_URL: http://sidecar:8077
+      # Must match the sidecar's base — the server sends table paths to the sidecar.
+      RONIN_DELTA_BASE: ${RONIN_DELTA_BASE:-/data/delta}
+      PORT: "3000"
+      RONIN_PUBLIC_URL: ${RONIN_PUBLIC_URL:-http://localhost:3000}
+      RONIN_LOG_LEVEL: ${RONIN_LOG_LEVEL:-info}
+    ports:
+      - "${RONIN_PORT:-3000}:3000"
+    depends_on:
+      - sidecar
+    restart: unless-stopped
+
+volumes:
+  delta-data:

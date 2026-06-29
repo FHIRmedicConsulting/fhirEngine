@@ -1,0 +1,6 @@
+# Codegen FHIR package cache — recreated by `npm run generate`.
+.codegen-cache/
+
+# Standard Node ignores
+node_modules/
+*.log
