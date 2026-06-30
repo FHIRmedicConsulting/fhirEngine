@@ -514,24 +514,30 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
   // GET /:resourceType  — search. Reserved control params (_id/_lastUpdated on base columns,
   // paging, sort) + per-resource params (token/string/date) from the R4 SearchParameter
   // registry, matched against the materialized search index (multi-param AND).
-  app.get("/:resourceType", async (c) => {
-    const rt = c.req.param("resourceType");
-    assertR4Core(rt);
-    const count = clampInt(c.req.query("_count"), 50);
-    const offset = clampInt(c.req.query("_getpagesoffset"), 0);
-    const sortRaw = c.req.query("_sort") ?? "-_lastUpdated"; // default newest-first
+  // Shared search executor (GET `[type]?...` and POST `[type]/_search`). `sp` is the merged
+  // parameter set (URL query for GET; form body + URL query for POST per the FHIR search spec).
+  const recordOf = (sp: URLSearchParams): Record<string, string[]> => {
+    const rec: Record<string, string[]> = {};
+    for (const k of sp.keys()) rec[k] = sp.getAll(k);
+    return rec;
+  };
+  const runSearch = async (c: any, rt: string, sp: URLSearchParams) => {
+    const count = clampInt(sp.get("_count") ?? undefined, 50);
+    const offset = clampInt(sp.get("_getpagesoffset") ?? undefined, 0);
+    const sortRaw = sp.get("_sort") ?? "-_lastUpdated"; // default newest-first
     const sortDesc = sortRaw.startsWith("-");
     const sortField = sortRaw.replace(/^-/, "");
     const sortParam = sortField !== "_lastUpdated" && searchParam(rt, sortField) ? sortField : undefined;
 
     // Unified search: per-resource conditions + chaining/_has + base-column filters.
-    const { conds: chainConds, idIn } = await resolveChainsAndHas(rt, c.req.queries());
-    const conds = [...buildConds(rt, c.req.queries()), ...chainConds];
-    const lastUpdated = (c.req.queries("_lastUpdated") ?? []).map(parseRangeParam).filter((x): x is { op: string; value: string } => x !== null);
+    const queries = recordOf(sp);
+    const { conds: chainConds, idIn } = await resolveChainsAndHas(rt, queries);
+    const conds = [...buildConds(rt, queries), ...chainConds];
+    const lastUpdated = sp.getAll("_lastUpdated").map(parseRangeParam).filter((x): x is { op: string; value: string } => x !== null);
     let resources: FhirResource[];
     let total: number;
     {
-      const r = await repo(rt).searchByParams({ conds, id: c.req.query("_id"), idIn, lastUpdated, count, offset, sortDesc, sortParam });
+      const r = await repo(rt).searchByParams({ conds, id: sp.get("_id") ?? undefined, idIn, lastUpdated, count, offset, sortDesc, sortParam });
       resources = r.resources;
       total = r.total;
     }
@@ -545,7 +551,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
       seen.add(key);
       includeEntries.push({ fullUrl: `${baseUrl}/${type}/${res.id}`, resource: res, search: { mode: "include" } });
     };
-    for (const inc of c.req.queries("_include") ?? []) {
+    for (const inc of sp.getAll("_include")) {
       const [srcType, param] = inc.split(":");
       const def = srcType === rt && param ? searchParam(rt, param) : undefined;
       if (!def || def.type !== "reference") continue;
@@ -559,7 +565,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
         }
       }
     }
-    for (const rev of c.req.queries("_revinclude") ?? []) {
+    for (const rev of sp.getAll("_revinclude")) {
       const [srcType, param] = rev.split(":");
       const def = srcType && param ? searchParam(srcType, param) : undefined;
       if (!def || def.type !== "reference") continue;
@@ -568,22 +574,21 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
       }
     }
 
-    const query = new URLSearchParams(c.req.url.split("?")[1] ?? "");
-    const link = [{ relation: "self", url: `${baseUrl}/${rt}?${query.toString()}` }];
+    const link = [{ relation: "self", url: `${baseUrl}/${rt}?${sp.toString()}` }];
     if (offset + count < total) {
-      const nx = new URLSearchParams(query);
+      const nx = new URLSearchParams(sp);
       nx.set("_count", String(count));
       nx.set("_getpagesoffset", String(offset + count));
       link.push({ relation: "next", url: `${baseUrl}/${rt}?${nx.toString()}` });
     }
 
     // _summary=count → totals only, no entries.
-    if (c.req.query("_summary") === "count") {
+    if (sp.get("_summary") === "count") {
       return c.json({ resourceType: "Bundle", type: "searchset", timestamp: new Date().toISOString(), total, link });
     }
     // _elements / _summary=text → trim returned elements (mandatory id/meta always kept).
-    const elements = c.req.query("_elements")?.split(",").map((s) => s.trim()).filter(Boolean);
-    const summaryText = c.req.query("_summary") === "text";
+    const elements = sp.get("_elements")?.split(",").map((s) => s.trim()).filter(Boolean);
+    const summaryText = sp.get("_summary") === "text";
     const shape = (r: FhirResource) => {
       const o = applyObligations(r, c.get("auth")); // 42 CFR Part 2 notice + inline redaction
       if (summaryText) return pick(o, ["text", "id", "meta", "resourceType"]);
@@ -608,6 +613,22 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
         ...includeEntries.map((e) => ({ ...e, resource: shape(e.resource) })),
       ],
     });
+  };
+
+  app.get("/:resourceType", async (c) => {
+    const rt = c.req.param("resourceType");
+    assertR4Core(rt);
+    return runSearch(c, rt, new URL(c.req.url).searchParams);
+  });
+
+  // POST [type]/_search — form-encoded search (FHIR search spec; US Core / (g)(10) require it).
+  // Params are the union of the form body and any URL query params.
+  app.post("/:resourceType/_search", async (c) => {
+    const rt = c.req.param("resourceType");
+    assertR4Core(rt);
+    const sp = new URLSearchParams(await c.req.text());
+    for (const [k, v] of new URL(c.req.url).searchParams) sp.append(k, v);
+    return runSearch(c, rt, sp);
   });
 
   return app;

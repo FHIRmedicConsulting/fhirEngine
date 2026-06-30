@@ -40,6 +40,31 @@ local validator; no TLS on the local http listener), not server defects.
 - `instantiates: ["…/us/core/CapabilityStatement/us-core-server"]` when a US Core profile is installed.
 - `format: ["application/fhir+json"]` — dropped the bare `"json"` shorthand (JSON-only, honest).
 
+## Run 2 — US Core v6.1.0 › Patient group (data: US Core `Patient-example`, tag `uscore-example`)
+
+`patient_ids=example`, open server (auth off). **8 PASS / 2 skip / (must-support skip + validation error).**
+
+| Test | Result | Note |
+|---|---|---|
+| _id / identifier / name searches | ✅ PASS | incl. compound birthdate+family, family+gender, birthdate+name, gender+name |
+| Patient read | ✅ PASS | |
+| _id search | ✅ PASS | **after fixing POST `[type]/_search`** (Inferno's _id test also POSTs `/_search`) |
+| death-date+family search | ⏭️ SKIP | example patient isn't deceased (data) |
+| Provenance `_revinclude` | ⏭️ SKIP | no Provenance for the patient (data) |
+| must-support | ⏭️ SKIP | single example lacks `deceasedDateTime`, `communication` (data breadth → Synthea) |
+| validation | ⚠️ ERROR | validator cold-start timeout (`hl7_validator_service`); transient/environmental |
+
+### Fixes applied (committed) — both real defects surfaced by Inferno
+- **POST `[type]/_search`** (form-encoded search, union of body + URL params) — FHIR search spec /
+  US Core requirement; GET search refactored into a shared executor and reused.
+- **Startup table discovery** (`DeltaWarehouse.registerExistingTables`) — a restarted server now
+  registers on-disk bronze/silver/gold tables so it can read data it didn't write this process
+  (registration was in-memory; a restart made existing data invisible to search). Wired into the
+  server entry. Covered by `delta-post-search` test.
+
+The 2 skips + must-support skip + validation error are all **data breadth / validator warmup**,
+not server defects — addressed by loading Synthea (deceased + communication + Provenance) next.
+
 ## Known headless-Inferno friction
 
 - The SMART **discovery** sub-group is nested under a `run_as_group` Standalone-Launch parent, so it

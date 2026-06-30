@@ -25,6 +25,10 @@ async function main(): Promise<void> {
   if (!(await warehouse.health())) {
     log.warn({ sidecarUrl }, "delta sidecar not reachable — start sidecar/delta_sidecar.py first");
   }
+  // Register tables already on disk so reads work immediately after a restart (registration
+  // is otherwise in-memory, populated only on write).
+  const existing = await warehouse.registerExistingTables();
+  if (existing.length) log.info({ tables: existing.length }, "registered existing Delta tables on startup");
 
   const app = createDeltaApp({ warehouse, baseUrl: publicUrl });
   serve({ fetch: app.fetch, port }, (info) =>

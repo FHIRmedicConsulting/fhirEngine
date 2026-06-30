@@ -80,11 +80,13 @@ function literal(v: unknown): string {
 export class DeltaWarehouse implements Warehouse {
   private readonly sidecarUrl: string;
   private readonly catalog: Catalog;
+  private readonly base: string;
   /** Logical table name → Delta path, registered for DataFusion queries. */
   private readonly tables = new Map<string, string>();
 
   constructor(opts: DeltaWarehouseOptions) {
     this.sidecarUrl = opts.sidecarUrl.replace(/\/$/, "");
+    this.base = opts.base.replace(/\/$/, "");
     const mode = opts.storageMode ?? (process.env.RONIN_STORAGE_MODE === "medallion" ? "medallion" : "single");
     this.catalog = opts.catalog ?? new PathCatalog(opts.base, mode);
   }
@@ -92,6 +94,32 @@ export class DeltaWarehouse implements Warehouse {
   /** Register a logical table name → path so queries can reference it. */
   registerTable(name: string, path: string): void {
     this.tables.set(name, path);
+  }
+
+  /**
+   * Discover + register tables already on disk so a freshly-started server can read data it
+   * didn't write this process (table registration is otherwise in-memory). Local-FS bases only;
+   * object stores register lazily on first write. Returns the registered logical table names.
+   */
+  async registerExistingTables(): Promise<string[]> {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(this.base)) return []; // object store → skip FS scan
+    const fs = await import("node:fs/promises");
+    const registered: string[] = [];
+    const scan = async (subdir: string, name: (dir: string) => string) => {
+      const dir = `${this.base}/${subdir}`;
+      let entries: string[] = [];
+      try { entries = (await fs.readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory()).map((e) => e.name); } catch { return; }
+      for (const d of entries) {
+        // a Delta table has a _delta_log/ child
+        try { await fs.access(`${dir}/${d}/_delta_log`); } catch { continue; }
+        this.registerTable(name(d), `${dir}/${d}`);
+        registered.push(name(d));
+      }
+    };
+    await scan("bronze", (d) => d);                 // search/read path (logical name = rt-lower)
+    await scan("silver", (d) => `${d}_silver`);
+    await scan("gold", (d) => `${d}_gold`);
+    return registered;
   }
 
   /** True once a table has been written/registered (its Delta path exists). */
