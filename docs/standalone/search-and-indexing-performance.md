@@ -60,6 +60,21 @@ Correct and fine for dev/synthetic volumes. The scaling costs are predictable.
    stats. Override: `OptimizeOpts.zorder` (explicit columns or `false`); CLI `--no-zorder`.
    Runs as part of OPTIMIZE — no extra pass over #2.
 
+2b. **Single-writer concurrency / durability — ✅ DONE (Priority #3).** delta-rs is
+   single-writer per table; concurrent commits to the same table conflict and (unhandled) lose
+   writes. Two layers:
+   - **In-process serialization** — `DeltaWarehouse` chains all mutating ops per table path
+     (`postWrite`), so concurrent requests in one server never overlap commits to the same
+     table. Reads are not serialized. Replaces the audit sink's bespoke chain (now centralized).
+   - **Cross-process retry** — the sidecar wraps every commit (`write`/`write-version`/`merge`/
+     `delete`) in `_with_retry` (exponential backoff, conflict-shaped errors only; schema/cast
+     errors propagate immediately) and re-reads the latest snapshot per attempt. Validated: 12
+     concurrent raw appends to one table all survive.
+   - Verified: `delta-concurrency` (24 concurrent creates all land; concurrent version writes
+     serialize to contiguous versions, one current). Note: optimistic concurrency for
+     read-modify-write *updates* is the existing `If-Match`/412 path — orthogonal to commit-level
+     serialization.
+
 3. **File-skipping via column statistics — already on; keep the layout favorable.** Delta
    keeps per-file min/max stats for leading scalar columns. Predicates on `id` and
    `last_updated` (point reads, `_lastUpdated`, `_id`) can skip files — and Z-order by `id`

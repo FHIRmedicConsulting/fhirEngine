@@ -18,10 +18,6 @@ function patientOf(event: AuditEvent): string | null {
 }
 
 export class DeltaAuditSink implements AuditSink {
-  // Serialize appends: concurrent fire-and-forget writes to the single-writer audit table
-  // would conflict; chaining them keeps the audit trail complete without blocking requests.
-  private tail: Promise<unknown> = Promise.resolve();
-
   constructor(private readonly wh: DeltaWarehouse) {}
 
   create(event: AuditEvent): Promise<void> {
@@ -39,8 +35,9 @@ export class DeltaAuditSink implements AuditSink {
       patient: patientOf(event) ?? "",
       body_json: JSON.stringify(event),
     };
-    this.tail = this.tail.catch(() => {}).then(() => this.wh.writeAudit(row));
-    return this.tail as Promise<void>;
+    // Concurrent fire-and-forget audit writes to the single-writer audit table are serialized
+    // by the warehouse (per-table write chain, Priority #3) — no bespoke chain needed here.
+    return this.wh.writeAudit(row);
   }
 
   /** Accounting of disclosures for a patient (ADR-0016 §3 / HITECH), newest-first. */

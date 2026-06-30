@@ -123,7 +123,7 @@ export class DeltaWarehouse implements Warehouse {
   async writeTerminology(table: string, rows: unknown[], mode: "append" | "overwrite" = "append"): Promise<void> {
     const path = this.catalog.terminologyPath(table);
     this.registerTable(table, path);
-    await this.post("/write", { table_path: path, rows, mode, schema: "infer" });
+    await this.postWrite(path, "/write", { table_path: path, rows, mode, schema: "infer" });
   }
 
   /** Register a conformance-store table for queries. */
@@ -136,7 +136,7 @@ export class DeltaWarehouse implements Warehouse {
   async writeConformance(table: string, rows: unknown[], mode: "append" | "overwrite" = "append"): Promise<void> {
     const path = this.catalog.conformancePath(table);
     this.registerTable(table, path);
-    await this.post("/write", { table_path: path, rows, mode, schema: "infer" });
+    await this.postWrite(path, "/write", { table_path: path, rows, mode, schema: "infer" });
   }
 
   private async post<T>(route: string, body: unknown): Promise<T> {
@@ -150,6 +150,23 @@ export class DeltaWarehouse implements Warehouse {
       throw new Error(`delta sidecar ${route} ${res.status}: ${json.error} ${json.detail ?? ""}`);
     }
     return json as T;
+  }
+
+  // --- Single-writer serialization (Priority #3) ---
+  // delta-rs is single-writer per table; concurrent commits to the same table conflict.
+  private writeChains = new Map<string, Promise<unknown>>();
+
+  /**
+   * Serialize all mutating ops to a given table path, so concurrent requests in THIS process
+   * never issue overlapping commits to the same single-writer Delta table (the main conflict
+   * source). Cross-process conflicts are retried in the sidecar. Reads are not serialized; a
+   * failed write never breaks the chain for the next writer. One chain entry per table (bounded).
+   */
+  private postWrite<T>(path: string, route: string, body: unknown): Promise<T> {
+    const prev = this.writeChains.get(path) ?? Promise.resolve();
+    const next = prev.catch(() => {}).then(() => this.post<T>(route, body));
+    this.writeChains.set(path, next.catch(() => {}));
+    return next;
   }
 
   /** Sidecar liveness (used by tests / startup). */
@@ -172,7 +189,7 @@ export class DeltaWarehouse implements Warehouse {
   ): Promise<void> {
     const path = this.catalog.tablePath(tier, resourceType);
     this.registerTable(this.catalog.tableName(tier, resourceType), path);
-    await this.post("/write", { table_path: path, rows, mode, schema });
+    await this.postWrite(path, "/write", { table_path: path, rows, mode, schema });
   }
 
   /** MERGE-upsert rows into a tier table by key (e.g. Gold current-version). */
@@ -185,7 +202,7 @@ export class DeltaWarehouse implements Warehouse {
   ): Promise<void> {
     const path = this.catalog.tablePath(tier, resourceType);
     this.registerTable(this.catalog.tableName(tier, resourceType), path);
-    await this.post("/merge", { table_path: path, rows, key, schema });
+    await this.postWrite(path, "/merge", { table_path: path, rows, key, schema });
   }
 
   /**
@@ -197,7 +214,7 @@ export class DeltaWarehouse implements Warehouse {
     const path = this.catalog.tablePath("bronze", resourceType);
     // Plain append — validation now runs in the shared TS tier PRIOR to this call
     // (ADR-0028 / validation-approach migration); the sidecar is a pure writer.
-    const result = await this.post<BronzeWriteResult>("/write", {
+    const result = await this.postWrite<BronzeWriteResult>(path, "/write", {
       table_path: path,
       rows: [row],
       mode: "append",
@@ -217,7 +234,7 @@ export class DeltaWarehouse implements Warehouse {
    */
   async writeVersion(resourceType: string, row: RawBronzeRow, prevVersionId: number | null): Promise<void> {
     const path = this.catalog.tablePath("bronze", resourceType);
-    await this.post("/write-version", { table_path: path, row, prev_version_id: prevVersionId, schema: "bronze" });
+    await this.postWrite(path, "/write-version", { table_path: path, row, prev_version_id: prevVersionId, schema: "bronze" });
     this.registerTable(this.catalog.tableName("bronze", resourceType), path);
   }
 
@@ -248,7 +265,7 @@ export class DeltaWarehouse implements Warehouse {
   /** Append an AuditEvent (append-only per FHIR/ADR-0016) to the audit store. */
   async writeAudit(row: Record<string, unknown>): Promise<void> {
     const path = this.catalog.auditPath();
-    await this.post("/write", { table_path: path, rows: [row], mode: "append", schema: "infer" });
+    await this.postWrite(path, "/write", { table_path: path, rows: [row], mode: "append", schema: "infer" });
     this.registerTable("audit_event", path);
   }
 
@@ -262,18 +279,20 @@ export class DeltaWarehouse implements Warehouse {
   /** Append rows to the pending-terminology quarantine queue. */
   async writePendingTerminology(rows: unknown[]): Promise<void> {
     const path = this.catalog.pendingTerminologyPath();
-    await this.post("/write", { table_path: path, rows, mode: "append", schema: "infer" });
+    await this.postWrite(path, "/write", { table_path: path, rows, mode: "append", schema: "infer" });
     this.registerTable("pending_terminology", path);
   }
 
   /** Delete pending-terminology rows matching a SQL predicate (after resolve/dead-letter). */
   async deletePendingTerminology(predicate: string): Promise<void> {
-    await this.post("/delete", { table_path: this.catalog.pendingTerminologyPath(), predicate });
+    const path = this.catalog.pendingTerminologyPath();
+    await this.postWrite(path, "/delete", { table_path: path, predicate });
   }
 
   /** Delete terminology rows matching a SQL predicate (idempotent per-value-set replace). */
   async deleteTerminology(table: string, predicate: string): Promise<void> {
-    await this.post("/delete", { table_path: this.catalog.terminologyPath(table), predicate });
+    const path = this.catalog.terminologyPath(table);
+    await this.postWrite(path, "/delete", { table_path: path, predicate });
   }
 
   /** Compact a terminology table (+ optional vacuum), a tier-less table. */
@@ -283,12 +302,8 @@ export class DeltaWarehouse implements Warehouse {
 
   /** Append a failed-validation record to the dead-letter / failed-message queue. */
   async writeDeadLetter(resourceType: string, row: Record<string, unknown>): Promise<void> {
-    await this.post("/write", {
-      table_path: this.catalog.deadLetterPath(resourceType),
-      rows: [row],
-      mode: "append",
-      schema: "infer",
-    });
+    const path = this.catalog.deadLetterPath(resourceType);
+    await this.postWrite(path, "/write", { table_path: path, rows: [row], mode: "append", schema: "infer" });
   }
 
   // --- Warehouse interface ---

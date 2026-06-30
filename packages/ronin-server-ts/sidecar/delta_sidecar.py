@@ -21,7 +21,30 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pyarrow as pa
 from deltalake import DeltaTable, QueryBuilder, write_deltalake
+from deltalake.exceptions import CommitFailedError
 from fhir.resources import get_fhir_model_class  # R4 Core structural validation (pydantic)
+
+_COMMIT_ATTEMPTS = 5
+
+
+def _with_retry(fn, attempts=_COMMIT_ATTEMPTS):
+    """Retry a Delta commit on transient concurrent-writer conflicts (Priority #3). delta-rs is
+    single-writer per table; in-process writes are already serialized by the TS warehouse, but
+    cross-process commits can still collide. Backs off exponentially. Non-conflict errors (schema
+    mismatch, cast, etc.) propagate immediately — they would never succeed on retry."""
+    delay = 0.05
+    for i in range(attempts):
+        try:
+            return fn()
+        except CommitFailedError:
+            if i == attempts - 1:
+                raise
+        except Exception as e:  # noqa: BLE001 — only RETRY on conflict-shaped messages
+            msg = str(e).lower()
+            if i == attempts - 1 or not any(k in msg for k in ("conflict", "concurrent", "version already exists")):
+                raise
+        time.sleep(delay)
+        delay = min(delay * 2, 1.0)
 
 # Raw Bronze row schema (Layering B: Bronze = raw JSON landing, NOT flattened).
 # Fixed shape per ADR-0010 / ADR-0022; flattening happens Bronze->Silver later.
@@ -175,7 +198,7 @@ def do_write(req):
     if good:
         if not _is_object_store(path):
             os.makedirs(os.path.dirname(path), exist_ok=True)
-        write_deltalake(path, _to_table(good, schema), mode=mode)
+        _with_retry(lambda: write_deltalake(path, _to_table(good, schema), mode=mode))
         written = len(good)
 
     deadlettered = _deadletter(req.get("deadletter_path"), bad)
@@ -195,20 +218,17 @@ def do_merge(req):
     if not _is_object_store(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        write_deltalake(path, _to_table(rows, schema))
+        _with_retry(lambda: write_deltalake(path, _to_table(rows, schema)))
         return {"version": DeltaTable(path).version(), "created": True}
-    dt = DeltaTable(path)
-    (
-        dt.merge(
+
+    def _commit():
+        DeltaTable(path).merge(  # re-read latest snapshot each attempt
             source=_to_table(rows, schema),
             predicate=f"target.{key} = source.{key}",
             source_alias="source",
             target_alias="target",
-        )
-        .when_matched_update_all()
-        .when_not_matched_insert_all()
-        .execute()
-    )
+        ).when_matched_update_all().when_not_matched_insert_all().execute()
+    _with_retry(_commit)
     return {"version": DeltaTable(path).version()}
 
 
@@ -223,22 +243,21 @@ def do_write_version(req):
     if not _is_object_store(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        write_deltalake(path, _table([row]))  # first version of the first id
+        _with_retry(lambda: write_deltalake(path, _table([row])))  # first version of the first id
         return {"version": DeltaTable(path).version(), "created": True}
     src = [row]
     if prev is not None:
         src.append({**_blank_bronze_row(), "id": row["id"], "version_id": prev, "is_current": False})
-    dt = DeltaTable(path)
-    (
-        dt.merge(
+
+    def _commit():
+        DeltaTable(path).merge(  # re-read table state each attempt (latest snapshot for the merge)
             source=_table(src),
             predicate="target.id = source.id AND target.version_id = source.version_id",
             source_alias="source", target_alias="target",
-        )
-        .when_matched_update(updates={"is_current": "source.is_current"})  # demote the prior version
-        .when_not_matched_insert_all(predicate="source.is_current = true")  # insert only the new version
-        .execute()
-    )
+        ).when_matched_update(updates={"is_current": "source.is_current"}  # demote the prior version
+        ).when_not_matched_insert_all(predicate="source.is_current = true"  # insert only the new version
+        ).execute()
+    _with_retry(_commit)
     return {"version": DeltaTable(path).version()}
 
 
@@ -349,7 +368,7 @@ def do_delete(req):
     except Exception:
         return {"deleted": 0, "missing": True}
     predicate = req.get("predicate")
-    res = dt.delete(predicate) if predicate else dt.delete()
+    res = _with_retry(lambda: DeltaTable(path).delete(predicate) if predicate else DeltaTable(path).delete())
     return {"deleted": getattr(res, "num_deleted_rows", None) if hasattr(res, "num_deleted_rows") else str(res)}
 
 
