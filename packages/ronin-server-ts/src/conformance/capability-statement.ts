@@ -26,6 +26,10 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
     /* conformance store not provisioned → no supportedProfile */
   }
 
+  // If any installed profile is US Core, advertise instantiation of the US Core server
+  // CapabilityStatement (Inferno (g)(10) us_core_instantiate check).
+  const instantiatesUsCore = [...profilesByType.values()].flat().some((u) => u.includes("/us/core/"));
+
   const resources = r4CoreResourceTypes.map((rt) => ({
     type: rt,
     interaction: [
@@ -55,7 +59,8 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
     software: { name: "RoninStandAlone", version: SOFTWARE_VERSION },
     implementation: { description: "RoninStandAlone OSS-Delta FHIR R4 server (delta-rs/DataFusion)", url: baseUrl },
     fhirVersion: "4.0.1",
-    format: ["application/fhir+json", "json"],
+    ...(instantiatesUsCore ? { instantiates: ["http://hl7.org/fhir/us/core/CapabilityStatement/us-core-server"] } : {}),
+    format: ["application/fhir+json"], // JSON only — honest (no XML/ttl); drop the bare "json" shorthand
     rest: [
       {
         mode: "server",
