@@ -193,7 +193,9 @@ export class DeltaResourceRepository {
     const conds = opts.conds ?? [];
 
     // cur = current-version, non-deleted rows, pre-filtered by base columns (_id/_lastUpdated).
-    const baseWhere = ["rn = 1", "NOT deleted"];
+    // Priority #2: `is_current` is maintained on write → a direct filter, no window-function
+    // (PARTITION BY id) scan over all historical versions.
+    const baseWhere = ["is_current", "NOT deleted"];
     const baseArgs: unknown[] = [];
     if (opts.id) { baseWhere.push("id = ?"); baseArgs.push(opts.id); }
     if (opts.idIn && opts.idIn.length) { baseWhere.push(`id IN (${opts.idIn.map(() => "?").join(", ")})`); baseArgs.push(...opts.idIn); }
@@ -202,11 +204,8 @@ export class DeltaResourceRepository {
       else { baseWhere.push(`last_updated ${lu.op} ?`); baseArgs.push(lu.value); }
     }
     const cur = `cur AS (
-      SELECT id, body_json, last_updated, search_param_index FROM (
-        SELECT id, body_json, last_updated, search_param_index, deleted,
-               row_number() OVER (PARTITION BY id ORDER BY version_id DESC) AS rn
-        FROM ${this.table}
-      ) WHERE ${baseWhere.join(" AND ")})`;
+      SELECT id, body_json, last_updated, search_param_index
+      FROM ${this.table} WHERE ${baseWhere.join(" AND ")})`;
 
     const isNeg = (c: SearchCondition) => c.modifier === "not" || (c.modifier === "missing" && c.value === "true");
     const pos = conds.filter((c) => !isNeg(c));
@@ -263,11 +262,8 @@ export class DeltaResourceRepository {
     const placeholders = paramCodes.map(() => "?").join(", ");
     const rows = await this.wh.query<{ body_json: string }>(
       `SELECT DISTINCT body_json FROM (
-         SELECT id, body_json, unnest(search_param_index) AS s FROM (
-           SELECT id, body_json, search_param_index, deleted,
-                  row_number() OVER (PARTITION BY id ORDER BY version_id DESC) AS rn
-           FROM ${this.table}
-         ) WHERE rn = 1 AND NOT deleted
+         SELECT id, body_json, unnest(search_param_index) AS s
+         FROM ${this.table} WHERE is_current AND NOT deleted
        ) t WHERE t.s.code IN (${placeholders}) AND t.s.value = ?`,
       [...paramCodes, reference],
     );
@@ -279,11 +275,8 @@ export class DeltaResourceRepository {
     if (!this.wh.hasTable(this.table)) return [];
     const rows = await this.wh.query<{ body_json: string }>(
       `SELECT DISTINCT body_json FROM (
-         SELECT body_json, unnest(identifier_index) AS i FROM (
-           SELECT id, body_json, identifier_index, deleted,
-                  row_number() OVER (PARTITION BY id ORDER BY version_id DESC) AS rn
-           FROM ${this.table}
-         ) WHERE rn = 1 AND NOT deleted
+         SELECT body_json, unnest(identifier_index) AS i
+         FROM ${this.table} WHERE is_current AND NOT deleted
        ) t WHERE t.i.system = ? AND t.i.value = ?`,
       [system, value],
     );
@@ -346,7 +339,12 @@ export class DeltaResourceRepository {
       );
     }
 
-    await this.wh.writeBronze(this.resourceType, bronzeRow(resource, versionId, now.toISOString(), deleted));
+    // Versions are contiguous (1,2,3…) → the prior current version is versionId-1 (null on create).
+    await this.wh.writeVersion(
+      this.resourceType,
+      bronzeRow(resource, versionId, now.toISOString(), deleted),
+      versionId > 1 ? versionId - 1 : null,
+    );
   }
 
   private stamp(input: FhirResource, fhirId: string, versionId: number, now: Date): FhirResource {

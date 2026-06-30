@@ -19,15 +19,25 @@ Correct and fine for dev/synthetic volumes. The scaling costs are predictable.
 
 ## What actually helps (priority order)
 
-1. **Current-version materialization — the #1 lever.** The window-function-over-all-versions
-   dominates cost as version count grows. Fixes:
-   - **Medallion: Gold = the current-version table** (one row per id, no history). Reads/
-     searches hit Gold → no window function, no historical rows scanned. *This is exactly
-     why Gold is the operational store* (see `deployment-topology.md`).
-   - **Single store:** add an `is_current` boolean maintained on write (MERGE flips the prior
-     version), so search filters `WHERE is_current AND NOT deleted`. Cost: a MERGE per write
-     (single-writer). Or keep a separate current-version projection. Trade-off to decide with
-     the storage-topology ADR.
+1. **Current-version materialization — the #1 lever. ✅ DONE (single store).** The
+   window-function-over-all-versions dominated cost as version count grows. Implemented:
+   - **Single store: an `is_current` boolean maintained on write.** Search now filters
+     `WHERE is_current AND NOT deleted` — no `row_number() OVER (PARTITION BY id …)` scan over
+     history. Applied to all three hot paths (`searchByParams` `cur` CTE, `findReferencing`,
+     `searchByIdentifier`).
+   - **Atomic, no read window.** Each write is ONE Delta MERGE (`/write-version`) that inserts
+     the new version (`is_current=true`) and demotes the prior (`is_current=false`) in a single
+     commit — snapshot-isolated readers never see two-current or zero-current for an id. (A
+     plain append-then-flip would expose a transient double-current under the threaded sidecar.)
+     Cost: one MERGE per write (single-writer; pairs with the Z-order-by-id clustering in #2a so
+     the demote's id-point-update skips files). Point reads/`currentRow` stay `ORDER BY
+     version_id DESC LIMIT 1` (already cheap). History/vread/`_history` read all versions, unchanged.
+   - Verified: `delta-current-version` (one current row per id, no search duplicates, history
+     retained, tombstone excluded) + full suite green.
+   - **Medallion: Gold = the current-version table** (one row per id, no history) remains the
+     medallion answer (see `deployment-topology.md`); the `is_current` flag is the single-store
+     equivalent. Schema-evolution note: existing pre-`is_current` Bronze tables need a backfill
+     migration (out of scope here; fresh stores get the column from the fixed BRONZE_SCHEMA).
 
 2. **Compaction / OPTIMIZE + VACUUM — ✅ DONE (Priority #1).** Append-per-write creates one
    small file per create/update/audit/terminology-batch → file count explodes → scans slow.

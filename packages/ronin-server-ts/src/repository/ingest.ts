@@ -31,6 +31,7 @@ export function bronzeRow(resource: FhirResource, versionId: number, lastUpdated
     search_param_index: buildSearchIndex(resource as unknown as Record<string, unknown>),
     ext_json: "{}",
     deleted,
+    is_current: true, // the version being written is, by construction, the new current one
     _ingested_at: new Date().toISOString(),
     _ingest_source: "ronin-standalone",
   };

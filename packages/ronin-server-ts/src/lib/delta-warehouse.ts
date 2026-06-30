@@ -43,6 +43,9 @@ export interface RawBronzeRow {
   search_param_index: SearchIndexEntry[];
   ext_json: string;
   deleted: boolean;
+  /** Current-version flag (Priority #2). Search filters `WHERE is_current` instead of a
+   * window function over all versions. Maintained atomically by {@link writeVersion}. */
+  is_current: boolean;
   _ingested_at: string;
   _ingest_source: string;
 }
@@ -204,6 +207,18 @@ export class DeltaWarehouse implements Warehouse {
       this.registerTable(this.catalog.tableName("bronze", resourceType), path);
     }
     return result;
+  }
+
+  /**
+   * Current-version write (Priority #2): atomically insert the new version (`is_current=true`)
+   * and demote the prior version (`is_current=false`) in ONE Delta commit, so readers never see
+   * two-current or zero-current for an id. `prevVersionId` is the version being demoted (null on
+   * first create). Reads/search then filter `WHERE is_current` — no window-function over history.
+   */
+  async writeVersion(resourceType: string, row: RawBronzeRow, prevVersionId: number | null): Promise<void> {
+    const path = this.catalog.tablePath("bronze", resourceType);
+    await this.post("/write-version", { table_path: path, row, prev_version_id: prevVersionId, schema: "bronze" });
+    this.registerTable(this.catalog.tableName("bronze", resourceType), path);
   }
 
   /**

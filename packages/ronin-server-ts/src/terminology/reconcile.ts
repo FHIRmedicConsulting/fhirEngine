@@ -72,7 +72,7 @@ export async function reconcileTerminology(wh: DeltaWarehouse, opts?: { fetchImp
     } else if (vr.pending?.length) {
       report.stillPending++; // terminology still not loaded (e.g. non-VSAC) → keep queued
     } else {
-      await wh.writeBronze(p.resource_type, bronzeRow(resource as any, p.version_id, p.last_updated, p.deleted));
+      await wh.writeVersion(p.resource_type, bronzeRow(resource as any, p.version_id, p.last_updated, p.deleted), p.version_id > 1 ? p.version_id - 1 : null);
       await wh.deletePendingTerminology(`row_id = '${p.row_id}'`);
       report.resolved++;
     }

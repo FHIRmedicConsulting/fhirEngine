@@ -38,6 +38,7 @@ BRONZE_SCHEMA = pa.schema([
     ("search_param_index", pa.list_(SPARAM)),
     ("ext_json", pa.string()),
     ("deleted", pa.bool_()),
+    ("is_current", pa.bool_()),  # current-version flag: search filters WHERE is_current
     ("_ingested_at", pa.string()),
     ("_ingest_source", pa.string()),
 ])
@@ -45,6 +46,14 @@ BRONZE_SCHEMA = pa.schema([
 
 def _table(rows):
     return pa.Table.from_pylist(rows, schema=BRONZE_SCHEMA)
+
+
+def _blank_bronze_row():
+    """A schema-complete Bronze row of defaults — used as the match-only demotion row in
+    /write-version (only its id/version_id/is_current are consumed by the MERGE)."""
+    return {"id": "", "version_id": 0, "last_updated": "", "body_json": "",
+            "identifier_index": [], "search_param_index": [], "ext_json": "",
+            "deleted": False, "is_current": False, "_ingested_at": "", "_ingest_source": ""}
 
 
 def _to_table(rows, schema):
@@ -203,6 +212,36 @@ def do_merge(req):
     return {"version": DeltaTable(path).version()}
 
 
+def do_write_version(req):
+    """Atomic current-version write: insert the new version (is_current=true) AND demote the
+    prior version (is_current=false) in ONE Delta commit, so readers (snapshot-isolated) never
+    see two current rows or zero current rows for an id. `prev_version_id` is the version being
+    demoted (null on first create). Bronze schema only."""
+    path = req["table_path"]
+    row = req["row"]
+    prev = req.get("prev_version_id")
+    if not _is_object_store(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        write_deltalake(path, _table([row]))  # first version of the first id
+        return {"version": DeltaTable(path).version(), "created": True}
+    src = [row]
+    if prev is not None:
+        src.append({**_blank_bronze_row(), "id": row["id"], "version_id": prev, "is_current": False})
+    dt = DeltaTable(path)
+    (
+        dt.merge(
+            source=_table(src),
+            predicate="target.id = source.id AND target.version_id = source.version_id",
+            source_alias="source", target_alias="target",
+        )
+        .when_matched_update(updates={"is_current": "source.is_current"})  # demote the prior version
+        .when_not_matched_insert_all(predicate="source.is_current = true")  # insert only the new version
+        .execute()
+    )
+    return {"version": DeltaTable(path).version()}
+
+
 def do_query(req):
     sql = req["sql"]
     tables = req.get("tables", {})
@@ -314,7 +353,7 @@ def do_delete(req):
     return {"deleted": getattr(res, "num_deleted_rows", None) if hasattr(res, "num_deleted_rows") else str(res)}
 
 
-ROUTES = {"/write": do_write, "/merge": do_merge, "/query": do_query,
+ROUTES = {"/write": do_write, "/write-version": do_write_version, "/merge": do_merge, "/query": do_query,
           "/validate": do_validate, "/optimize": do_optimize, "/optimize-all": do_optimize_all,
           "/delete": do_delete}
 
