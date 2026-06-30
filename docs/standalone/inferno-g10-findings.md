@@ -65,6 +65,35 @@ local validator; no TLS on the local http listener), not server defects.
 The 2 skips + must-support skip + validation error are all **data breadth / validator warmup**,
 not server defects — addressed by loading Synthea (deceased + communication + Provenance) next.
 
+## Run 3 — US Core v6.1.0 › Patient group, with Synthea (`synthea` tag) + example
+
+Loaded a **deceased Synthea patient** (US Core profiled, 830-entry transaction; has
+`deceasedDateTime` + `communication`) alongside the US Core `example`. `patient_ids` = both.
+
+**11 PASS** (all 8 searches incl. `death-date+family`, read, **validation**, **must-support**) +
+1 Inferno-tool error:
+
+| Test | Result |
+|---|---|
+| all search tests (incl. death-date+family) | ✅ PASS |
+| read | ✅ PASS |
+| validation (HL7 validator) | ✅ PASS |
+| must-support | ✅ PASS (Synthea patient supplied `deceasedDateTime`/`communication`) |
+| Provenance `_revinclude` | ⚠️ ERROR — Inferno `fhir_client` 6.2.0 `const_get "sid"`; **our response is correct** (returns Patient + Provenance, all references valid PascalCase) — Inferno-side, not a server defect |
+
+### Fix applied (committed) — real validation bug surfaced by loading Synthea
+- **Choice-type (`[x]`) required-element check.** The profile required-element validator compared
+  the literal name, so `medication[x]` was never satisfied by the concrete
+  `medicationCodeableConcept` → it **false-rejected valid US Core/Synthea resources** (and
+  blocked the atomic transaction load entirely). Fixed with `elementPresent()`: a `foo[x]`
+  requirement is met by any concrete `fooType` form (e.g. `valueQuantity` for `value[x]`).
+  Unit-tested (`element-present`). This unblocked the full 830-resource Synthea load.
+
+### Data loading
+- Synthea transaction bundles load via the existing transaction endpoint (urn:uuid resolved).
+  Bundles are **atomic** — one invalid entry fails the whole bundle, which is how the
+  `medication[x]` bug surfaced. Resources tagged `meta.tag` dataset = `synthea` | `uscore-example`.
+
 ## Known headless-Inferno friction
 
 - The SMART **discovery** sub-group is nested under a `run_as_group` Standalone-Launch parent, so it

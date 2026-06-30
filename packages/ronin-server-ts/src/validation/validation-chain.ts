@@ -65,6 +65,20 @@ export function validateStructuralOnly(resource: Record<string, unknown>): Valid
   return { valid: issues.length === 0, issues };
 }
 
+/** Is a (possibly choice-type) required element present + non-empty on the resource?
+ * For a `foo[x]` element, any concrete form satisfies it (e.g. `medication[x]` →
+ * `medicationCodeableConcept` | `medicationReference`; `value[x]` → `valueQuantity` …). */
+export function elementPresent(resource: Record<string, unknown>, el: string): boolean {
+  const nonEmpty = (v: unknown) => !(v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0));
+  if (el.endsWith("[x]")) {
+    const base = el.slice(0, -3);
+    return Object.keys(resource).some(
+      (k) => k.length > base.length && k.startsWith(base) && k[base.length] === k[base.length]!.toUpperCase() && nonEmpty(resource[k]),
+    );
+  }
+  return nonEmpty(resource[el]);
+}
+
 /** Full chain: structural + profile (required-elements from installed snapshots). */
 export async function validateResource(
   resource: Record<string, unknown>,
@@ -87,8 +101,7 @@ export async function validateResource(
     for (const url of profiles) {
       const spec = await profileSpec(opts.warehouse, url);
       for (const el of spec.required) {
-        const v = (resource as any)[el];
-        if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) {
+        if (!elementPresent(resource, el)) {
           issues.push({ path: `${rt}.${el}`, message: `profile ${url} requires element '${el}'` });
         }
       }
