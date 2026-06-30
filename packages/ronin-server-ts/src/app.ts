@@ -20,6 +20,7 @@ import { mountTransaction } from "./routes/transaction.js";
 import { authEnabled, buildAuthMiddleware } from "./auth/configure.js";
 import { auditEnabled, buildAuditMiddleware } from "./audit/configure.js";
 import { buildCapabilityStatement } from "./conformance/capability-statement.js";
+import { buildSmartConfiguration } from "./conformance/smart-configuration.js";
 import { FhirError } from "./lib/errors.js";
 import type { OperationOutcome } from "@ronin/fhir-types";
 
@@ -38,6 +39,10 @@ export function createDeltaApp(deps: DeltaAppDeps): Hono {
 
   app.get("/metadata", async (c) => c.json(await buildCapabilityStatement(deps.warehouse, deps.baseUrl)));
 
+  // SMART App Launch discovery (public, pre-auth-gate). Advertises the authorization/token
+  // endpoints + the capability/scope union across active SMART versions (ADR-0006 / ADR-0030).
+  app.get("/.well-known/smart-configuration", (c) => c.json(buildSmartConfiguration(deps.baseUrl)));
+
   // Audit (ADR-0030, control #2) — opt-in (RONIN_AUDIT_ENABLED). Mounted BEFORE the auth
   // gate so 401/403 denials are audited too; identity is read post-handler from c.var.auth.
   if (auditEnabled()) app.use("*", buildAuditMiddleware(deps.warehouse, deps.deploymentName ?? "ronin-standalone"));
@@ -52,6 +57,8 @@ export function createDeltaApp(deps: DeltaAppDeps): Hono {
 
   app.onError((err, c) => {
     if (err instanceof FhirError) {
+      // SMART/OAuth2: an unauthenticated request gets a Bearer challenge (Inferno checks 401).
+      if (err.status === 401) c.header("WWW-Authenticate", 'Bearer realm="RoninStandAlone", error="invalid_token"');
       return c.json(err.outcome, err.status as ContentfulStatusCode);
     }
     const outcome: OperationOutcome = {

@@ -8,6 +8,7 @@
  */
 import { r4CoreResourceTypes } from "../fhir-schema/r4-registry.js";
 import { listInstalledProfiles } from "./ig-loader.js";
+import { smartSecurityBlock } from "./smart-configuration.js";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 
 const SOFTWARE_VERSION = "0.1.0";
@@ -59,6 +60,7 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
       {
         mode: "server",
         documentation: "Generic R4 Core CRUD + vread/history + identifier search + $validate on a single/medallion Delta store.",
+        security: smartSecurityBlock(baseUrl),
         resource: resources,
         operation: [{ name: "validate", definition: "http://hl7.org/fhir/OperationDefinition/Resource-validate" }],
       },
