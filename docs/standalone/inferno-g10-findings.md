@@ -147,6 +147,41 @@ reference-search bug — Inferno searches `patient=<bare id>`, but our index sto
   `localhost:3000` unavailability under concurrent load. One small real finding remains
   (`document_reference` patient+status compound search).
 
+## Run 6 — validator saturation, root-caused + fixed (operational)
+
+The `hl7_validator_service:3500` "Connection failed" errors were **not** transient load — the
+validator container was **OOM-killed (exit 137, `OOMKilled: true`)** and stayed down, so every
+`validation` / `reference_resolution` test errored. Two causes:
+- **Tiny default JVM heap** — no `-Xmx` set, so the container JVM defaulted to ~25% of the 7.7 GiB
+  Docker VM (~1.9 GB), too small for the g10 IG + terminology load.
+- **`SESSION_CACHE_DURATION: -1`** (sessions never expire) — back-to-back groups accumulate
+  validator sessions until memory is exhausted.
+
+**Fix (test-kit `docker-compose.background.yml` → `hl7_validator_service`):**
+```yaml
+environment:
+  SESSION_CACHE_DURATION: 10        # was -1 (never expire) → finite, reclaims memory between groups
+  JAVA_TOOL_OPTIONS: "-Xmx5g"       # explicit heap (was the ~1.9 GB container default)
+```
+After recreating the container: it **survives back-to-back groups** (running, 0 restarts,
+`OOMKilled=false`, ~3.5 GiB used), and `validation`/`reference_resolution` tests now **execute**
+(real verdicts instead of connection errors). Host has 32 GB; the Docker VM is capped at 7.7 GB —
+raising the VM would give more headroom but wasn't necessary and is a machine-wide change (left alone).
+
+### What the now-running validator revealed (not server defects)
+- Remaining `validation` FAILs trace to the **external `tx.fhir.org`** terminology server
+  (`Error: cache … is not known to this server`) flaking under load — the validator delegates
+  terminology there. A local/pinned tx would stabilize these.
+- An `[info]` "CodeSystem `http://ronin/dataset` could not be found" is our **own dataset tag**
+  (`meta.tag`) — a test-harness artifact, not a data problem (attribute datasets by patient id, or
+  drop the tag, to keep validation clean).
+- Our server itself did not crash under load (single startup log line, no errors); the occasional
+  `localhost:3000` "connection refused" is transient listen-backlog under the harness's request
+  bursts — a minor robustness note, not a crash.
+
+Net after the fix: e.g. Encounter = **9 PASS** (all searches, read, provenance `_revinclude`),
+with the validation/must-support items gated only by external-tx + data-coverage, not server bugs.
+
 ## Known headless-Inferno friction
 
 - The SMART **discovery** sub-group is nested under a `run_as_group` Standalone-Launch parent, so it
