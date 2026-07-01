@@ -57,7 +57,17 @@ function buildIndexPred(c: SearchCondition): { sql: string; args: unknown[] } {
       return c.system
         ? { sql: `(t.s.code = ? AND TRY_CAST(t.s.value AS DOUBLE) ${c.op ?? "="} ? AND t.s.system = ?)`, args: [c.code, Number(c.value), c.system] }
         : { sql: `(t.s.code = ? AND TRY_CAST(t.s.value AS DOUBLE) ${c.op ?? "="} ?)`, args: [c.code, Number(c.value)] };
-    default: // token / reference / uri (+ :not, which is categorized negative by the caller)
+    case "reference": {
+      // FHIR reference search: a full `Type/id` (or absolute URL) matches exactly; a BARE id
+      // (`patient=123`, the common Inferno form) matches any stored `Type/123`. The index
+      // stores the resource's own reference form (e.g. `Patient/123`).
+      const v = c.value;
+      if (/^[A-Za-z]+\/.+/.test(v) || v.includes(":")) {
+        return { sql: `(t.s.code = ? AND t.s.value = ?)`, args: [c.code, v] };
+      }
+      return { sql: `(t.s.code = ? AND (t.s.value = ? OR t.s.value LIKE ?))`, args: [c.code, v, `%/${v}`] };
+    }
+    default: // token / uri (+ :not, which is categorized negative by the caller)
       return c.system
         ? { sql: `(t.s.code = ? AND t.s.value = ? AND t.s.system = ?)`, args: [c.code, c.value, c.system] }
         : { sql: `(t.s.code = ? AND t.s.value = ?)`, args: [c.code, c.value] };

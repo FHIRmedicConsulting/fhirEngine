@@ -94,6 +94,35 @@ Loaded a **deceased Synthea patient** (US Core profiled, 830-entry transaction; 
   Bundles are **atomic** — one invalid entry fails the whole bundle, which is how the
   `medication[x]` bug surfaced. Resources tagged `meta.tag` dataset = `synthea` | `uscore-example`.
 
+## Run 4 — US Core v6.1.0 clinical resource groups (Synthea data, 16 groups)
+
+First pass returned **all-skip** (patient-scoped searches found nothing). Root cause: a real
+reference-search bug — Inferno searches `patient=<bare id>`, but our index stores the full
+`Patient/<id>` and only exact-matched, so `Condition?patient=<id>` → 0 while
+`Condition?patient=Patient/<id>` → 38.
+
+### Fix applied (committed) — bare-id reference search
+- `buildIndexPred` now handles `reference` type distinctly: a full `Type/id` (or URL) matches
+  exactly; a **bare id matches any stored `Type/<id>`** (`… LIKE '%/<id>'`). Regression test
+  `delta-reference-search`. After the fix, the clinical surface went from all-skip to mostly-pass:
+  many search + read tests PASS (encounter, condition-encounter-diagnosis, document-reference,
+  smokingstatus, diagnostic-report-lab, immunization, blood-pressure, care-plan…).
+
+### Remaining, triaged
+- **Conditional references not resolved (real gap, larger follow-up).** Synthea persists
+  `reference: "Practitioner?identifier=http://hl7.org/fhir/sid/us-npi|…"` /
+  `"Organization?identifier=https://github.com/synthetichealth/synthea|…"`. Our transaction
+  handler resolves `urn:uuid:` but NOT conditional (`Type?query`) references, so they persist
+  literally — which is non-conformant (persisted refs must be literal) and makes Inferno's
+  `fhir_client` throw `wrong constant name sid`/`synthetichealth`. Fix needs org/practitioner
+  preload + conditional-reference resolution in the transaction processor.
+- **Validator connection errors** (`hl7_validator_service:3500`) on `validation`/`reference_resolution`
+  tests — the shared validator was saturated running 16 groups back-to-back; environmental, not
+  a server defect (single-group runs validate fine).
+- **Compound token searches** (`patient+category+status`, `patient+intent+status`) reported
+  "could not find <status/intent> values" for some groups — to re-verify on a stable single-group
+  run (several batch entries also hit transient `localhost:3000` unavailability under load).
+
 ## Known headless-Inferno friction
 
 - The SMART **discovery** sub-group is nested under a `run_as_group` Standalone-Launch parent, so it
