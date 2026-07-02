@@ -182,6 +182,35 @@ raising the VM would give more headroom but wasn't necessary and is a machine-wi
 Net after the fix: e.g. Encounter = **9 PASS** (all searches, read, provenance `_revinclude`),
 with the validation/must-support items gated only by external-tx + data-coverage, not server bugs.
 
+## Run 7 — terminology endpoints (the real gap) + tx stabilization
+
+**Gap found:** we built the terminology *store* + `validateCode` (used internally for L3 binding
+validation) but never exposed the FHIR terminology *operations*, so no external client — including
+the HL7 validator Inferno drives — could use RoninStandAlone as a terminology server. Validation
+therefore fell through to the external `tx.fhir.org`, which flakes (`cache not known`).
+
+**Fixed (committed):** `src/routes/terminology.ts` exposes `ValueSet/$validate-code`,
+`CodeSystem/$validate-code`, `ValueSet/$expand`, `CodeSystem/$lookup` (GET + POST/Parameters);
+CapabilityStatement advertises them. Verified directly against the provisioned store (**752k
+concepts**): RxNorm `$lookup`, `$validate-code` (valid/invalid/unknown → issue severity), `$expand`.
+RoninStandAlone **is now a FHIR terminology server.** Test: `delta-terminology-endpoints`.
+
+**tx stabilization — how to wire it:**
+- The standalone `us_core_v610` suite defaults to `tx.fhir.org`; point its validator at us with a
+  `cli_context { txServer 'http://host.docker.internal:3000' }` in the suite's
+  `fhir_resource_validator` block (NOT `validation_context`, which ignores it). Restart the
+  `hl7_validator_service` afterward — it caches validator sessions, so config changes need a fresh
+  session.
+- The official **g10 certification** suite instead sets `cli_context { txServer nil }` and filters
+  the resulting terminology warnings — the simplest way to remove the `tx.fhir.org` flakiness for a
+  clean run.
+- Note (environment): repeatedly restarting the g10-kit containers here made the `inferno` service
+  flaky; keep restarts minimal and wait for `/api/test_suites` before driving runs.
+
+Net: the terminology **server** is done and is the correct integration point (local, no external
+tx). Fully proving it end-to-end through Inferno's bundled validator additionally requires our tx
+surface to cover the validator's batch/`tx-resource` calls — a follow-up beyond the core endpoints.
+
 ## Known headless-Inferno friction
 
 - The SMART **discovery** sub-group is nested under a `run_as_group` Standalone-Launch parent, so it
