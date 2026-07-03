@@ -12,5 +12,14 @@ COPY packages/ronin-server-ts/sidecar/delta_sidecar.py .
 ENV RONIN_DELTA_SIDECAR_PORT=8077 \
     RONIN_DELTA_SIDECAR_HOST=0.0.0.0 \
     RONIN_DELTA_BASE=/data/delta
+
+# Least privilege: non-root user. NOTE: the /data volume (single-writer Delta store) must be
+# writable by uid 1000 — set the volume/ownership accordingly in your deploy.
+RUN useradd -m -u 1000 ronin && chown -R ronin:ronin /app
+USER ronin
+
 EXPOSE 8077
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8077/health').getcode()==200 else 1)"
+
 CMD ["python", "delta_sidecar.py"]

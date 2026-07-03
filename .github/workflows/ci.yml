@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+defaults:
+  run:
+    working-directory: packages/ronin-server-ts
+
+jobs:
+  unit:
+    name: typecheck · lint · unit · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/ronin-server-ts/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck   # self-builds @ronin/fhir-types dist first
+      - run: npm run lint
+      - run: npm run test:unit
+      - run: npm run build
+
+  integration:
+    name: delta integration (sidecar)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/ronin-server-ts/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - name: Install sidecar deps
+        working-directory: packages/ronin-server-ts/sidecar
+        run: pip install -r requirements.txt
+      - name: Start delta sidecar
+        run: |
+          python sidecar/delta_sidecar.py --port 8077 --base ./.delta-ci &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8077/health && break; sleep 1; done
+      - name: Delta integration tests
+        env:
+          RONIN_DELTA_SIDECAR_URL: http://127.0.0.1:8077
+          RONIN_DELTA_BASE: ./.delta-ci
+        run: npm run test:delta

@@ -37,6 +37,7 @@ export class DeltaAuditSink implements AuditSink {
     };
     // Concurrent fire-and-forget audit writes to the single-writer audit table are serialized
     // by the warehouse (per-table write chain, Priority #3) — no bespoke chain needed here.
+    // Failures surface via the audit middleware's onWriteError (never silent — §164.312(b)).
     return this.wh.writeAudit(row);
   }
 

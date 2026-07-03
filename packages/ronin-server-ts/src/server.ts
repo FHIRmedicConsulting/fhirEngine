@@ -8,6 +8,8 @@
  */
 
 import { serve } from "@hono/node-server";
+import { readFileSync } from "node:fs";
+import { createServer as createHttpsServer } from "node:https";
 import pino from "pino";
 import { DeltaWarehouse } from "./lib/delta-warehouse.js";
 import { createDeltaApp } from "./app.js";
@@ -31,9 +33,17 @@ async function main(): Promise<void> {
   if (existing.length) log.info({ tables: existing.length }, "registered existing Delta tables on startup");
 
   const app = createDeltaApp({ warehouse, baseUrl: publicUrl });
-  serve({ fetch: app.fetch, port }, (info) =>
-    log.info({ port: info.port, sidecarUrl, base }, "ronin-standalone (delta) listening"),
+
+  // Transmission security (45 CFR §164.312(e)): terminate TLS at a reverse proxy (the common
+  // deploy), OR run HTTPS directly by setting RONIN_TLS_CERT + RONIN_TLS_KEY (PEM paths).
+  const certPath = process.env.RONIN_TLS_CERT, keyPath = process.env.RONIN_TLS_KEY;
+  const tls = certPath && keyPath
+    ? { createServer: createHttpsServer, serverOptions: { cert: readFileSync(certPath), key: readFileSync(keyPath) } }
+    : {};
+  serve({ fetch: app.fetch, port, ...tls }, (info) =>
+    log.info({ port: info.port, sidecarUrl, base, tls: Boolean(certPath && keyPath) }, "ronin-standalone (delta) listening"),
   );
+  if (!(certPath && keyPath)) log.warn("TLS not configured (RONIN_TLS_CERT/KEY unset) — terminate TLS at a proxy before exposing PHI (§164.312(e))");
 
   // Opt-in store maintenance: Delta compaction (+ optional vacuum) on an interval
   // (RONIN_MAINTENANCE_INTERVAL_MIN). Keeps small files in check as the store grows.

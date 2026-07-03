@@ -38,7 +38,7 @@ export class JwksAuthStrategy implements AuthStrategy {
         ...(process.env.RONIN_JWT_ISSUER ? { issuer: process.env.RONIN_JWT_ISSUER } : {}),
         ...(process.env.RONIN_JWT_AUDIENCE ? { audience: process.env.RONIN_JWT_AUDIENCE } : {}),
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- key union vs jwtVerify overloads
+      // key union vs jwtVerify overloads
       const { payload: p } = await jwtVerify(token, (await this.key()) as any, opts);
       const scopeClaim = (p as any).scope ?? (p as any).scp;
       const scope = Array.isArray(scopeClaim) ? scopeClaim.join(" ") : typeof scopeClaim === "string" ? scopeClaim : "";

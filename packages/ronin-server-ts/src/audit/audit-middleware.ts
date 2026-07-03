@@ -77,6 +77,13 @@ function classifyPath(url: string): {
 }
 
 export function auditMiddleware(options: AuditMiddlewareOptions): MiddlewareHandler {
+  // Audit-write failures must never be silent (45 CFR §164.312(b)) — use the configured hook,
+  // else log. Production should route this to an alert / consider failing closed.
+  const onWriteError = (err: unknown): void => {
+    if (options.onWriteError) options.onWriteError(err);
+    else console.error("[ronin] AUDIT WRITE FAILED (event not persisted):", (err as Error)?.message ?? err);
+  };
+
   return async function (c: Context, next: Next) {
     const recordedAt = new Date().toISOString();
     const method = c.req.method;
@@ -127,11 +134,9 @@ export function auditMiddleware(options: AuditMiddlewareOptions): MiddlewareHand
         });
 
         // Fire-and-forget — don't block response on audit write.
-        options.auditRepo.create(event).catch((err) => {
-          if (options.onWriteError) options.onWriteError(err);
-        });
+        options.auditRepo.create(event).catch(onWriteError);
       } catch (err) {
-        if (options.onWriteError) options.onWriteError(err);
+        onWriteError(err);
       }
     }
   };

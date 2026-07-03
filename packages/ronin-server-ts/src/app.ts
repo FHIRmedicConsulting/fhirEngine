@@ -70,9 +70,13 @@ export function createDeltaApp(deps: DeltaAppDeps): Hono {
       if (err.status === 401) c.header("WWW-Authenticate", 'Bearer realm="RoninStandAlone", error="invalid_token"');
       return c.json(err.outcome, err.status as ContentfulStatusCode);
     }
+    // Unexpected error: log server-side for operators; return a GENERIC OperationOutcome so raw
+    // internals (SQL fragments, stack, resource values) never leak to the client. Production
+    // should route this to a PHI-safe log sink (an exception message may contain resource data).
+    console.error("[ronin] unhandled server error:", err);
     const outcome: OperationOutcome = {
       resourceType: "OperationOutcome",
-      issue: [{ severity: "fatal", code: "exception", diagnostics: err.message ?? "Internal server error" }],
+      issue: [{ severity: "fatal", code: "exception", diagnostics: "Internal server error" }],
     };
     return c.json(outcome, 500);
   });

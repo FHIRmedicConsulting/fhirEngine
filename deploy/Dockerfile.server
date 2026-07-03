@@ -17,7 +17,17 @@ ENV PORT=3000 \
     RONIN_DEPLOY_MODE=self-hosted \
     RONIN_DELTA_SIDECAR_URL=http://sidecar:8077 \
     RONIN_DELTA_BASE=/data/delta
+
+# Least privilege: run as the built-in non-root `node` user; own the app tree so it can write
+# its export scratch (RONIN_EXPORT_DIR defaults under the app dir).
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 3000
-# Runs the standalone (Delta) entry via tsx. Follow-up: compile to dist for a
-# leaner production image (current build script is heritage/dbignite-coupled).
+# Liveness: hit /health via Node's global fetch (no curl in the slim image).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://localhost:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+# TLS: terminate at a reverse proxy, or set RONIN_TLS_CERT/RONIN_TLS_KEY (PEM paths) for direct HTTPS.
+# Runs the standalone (Delta) entry via tsx. Follow-up: compile to dist for a leaner prod image.
 CMD ["npx", "tsx", "src/server.ts"]
