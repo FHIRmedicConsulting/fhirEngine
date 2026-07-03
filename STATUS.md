@@ -49,10 +49,11 @@ breadth (codeableConcept validate, `$expand` filter/paging/total) · ✅ search 
 `_sort`, `_include:iterate`, `_revinclude` guard) · ✅ `is_current` migration.
 
 ## Remaining follow-ups (explicitly deferred, lower priority)
-SMART **Backend Services** (client_credentials + private_key_jwt) · **composite** search params +
-multi-field `_sort` (codegen) · slicing max/closed + L4 invariants at depth ≥2 · **medallion**
-Gold-read-path (single store is the supported topology) · object-store **enumeration** for
-restart-registration + whole-store optimize · run the full **Inferno (g)(10)** suites end-to-end.
+✅ SMART **Backend Services** (client_credentials + private_key_jwt) — DONE. Remaining:
+**composite** search params + multi-field `_sort` (codegen) · slicing max/closed + L4 invariants
+at depth ≥2 · **medallion** Gold-read-path (single store is the supported topology) · object-store
+**enumeration** for restart-registration + whole-store optimize · run the full **Inferno (g)(10)**
+suites end-to-end (auth server + backend services now make the OAuth-gated suites reachable).
 
 ## Run / resume
 See `docs/status/session-033-2026-07-02.md` §6 (rebuild `.delta-inferno` with **rsync**, start
