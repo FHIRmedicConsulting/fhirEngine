@@ -285,3 +285,50 @@ real defect.
 **Net:** the #1–#10 fixes + the SMART auth server are validated against the real (g)(10) harness —
 search/read/`_revinclude`/history exercise cleanly with no crashes. The only remaining blocker for
 the validation/conformance/reference-resolution suites is the **validator memory** (environmental).
+
+---
+
+## Run 9 (2026-07-03) — validator LIVE (OOM fixed) + base-URL fix
+
+First run with the HL7 validator **actually running** end-to-end. Two harness fixes made it possible:
+
+1. **Validator OOM fixed.** Root cause was two-layered: the Docker Desktop VM was 7.65 GB (too small
+   for the validator's `-Xmx5g` heap alongside the other kit containers), *and* even once the VM had
+   room, `-Xmx5g` itself exhausted on real US Core validation (`fatal error: OutOfMemory: Java heap
+   space`). Fix: **Docker VM → 12 GB** (GUI; `settings-store.json` `MemoryMiB:12288` — manual edits
+   don't stick, the app rewrites the file on launch) **+ validator `JAVA_TOOL_OPTIONS: -Xmx8g`** in
+   `docker-compose.background.yml`. Validator now serves `200 OK POST /validate` steadily; max heap
+   reported 8 GB; container stays up across a full clinical batch.
+2. **Base-URL fix.** The server-under-test emitted self/next links as `http://localhost:3000/…`;
+   Inferno runs *inside a container*, so following paginated / revinclude links hit
+   `localhost:3000 connection refused`. Fix: launch the server with
+   **`RONIN_PUBLIC_URL=http://host.docker.internal:3000`** so emitted links are container-reachable.
+   All `localhost:3000` connection errors disappeared.
+
+**Results with the validator live (patient `019f1c95…`):**
+
+| Group | pass | fail | skip | validation_test |
+|---|---|---|---|---|
+| Patient | 10 | — | — | **PASS** (conforms to us-core-patient\|6.1.0) |
+| Encounter | 9 | 1 | 3 | fail — *external tx only* (see below) |
+| Observation (lab) | 6 | 1 | — | **PASS** |
+| DiagnosticReport (lab) | 8 | 2 | — | fail — *external tx only* + 1 status-search |
+
+- **Validation now runs and PASSES** for Patient + Observation-lab — the profile engine accepts our
+  stored resources. Milestone: this is the first time (g)(10) profile validation executed at all.
+- **The Encounter / DiagnosticReport `validation_test` fails are NOT structural non-conformance.**
+  The only *error*-level messages are the validator's calls to **external `tx.fhir.org`** erroring
+  (`The cache '…' is not known to this server`) while checking SNOMED on `Encounter.type` /
+  `reasonCode`. Everything else is INFO (our `http://ronin/dataset` tag CodeSystem — expected) or
+  WARNING (dom-6 narrative; "could not confirm" valueset membership). I.e. the failure is a flaky
+  **external terminology dependency**, not our data. Fix = point the validator at our **local**
+  terminology server (or disable remote tx) so codes validate locally — a follow-up.
+- **The `Could not find <code> values from status/intent` search fails** (medreq intent, docref /
+  diagnosticreport / observation status) persist and remain **served correctly on direct probe**:
+  `DiagnosticReport?…&status=final` → 89, `Observation?…&category=…|laboratory&status=final` → 128,
+  token-with-`system|code` forms all resolve. This is Inferno's compound-search value-extraction
+  step, not the query engine.
+
+**Net:** the validator blocker is gone — (g)(10) profile validation is operational and green where
+terminology resolves locally. The remaining gap to clean validation runs is **terminology config**
+(local tx for the validator), not FHIR-surface defects.

@@ -28,14 +28,17 @@ All 10 deep-review priorities (2026-07-02) are addressed — see `docs/status/20
 | CapabilityStatement | ✅ US Core `supportedProfile` + `instantiates`, JSON-only `format`, SMART `oauth-uris`, terminology ops |
 
 ## Conformance — Inferno (g)(10)
-Harness stood up (docker g10 kit); server driven headlessly. **Run 8 (2026-07-03), full re-run after
-the #1–#10 fixes + SMART auth server:** Capability 4/4 code-checks; **Patient 10 PASS**; clinical
-groups (encounter 9 / condition 12 / diagnostic-report 7 / document-reference 9 / immunization 5 …)
-search + read + provenance-revinclude PASS. **Zero `fhir_client` crashes** (conditional-ref / bare-id
-fixes hold); no server 5xx. Remaining `error`s are all the **validator OOM** (environmental — needs
-Docker VM > ~8 GB); the 6 non-validator FAILs (medreq intent, docref status, practitioner address)
-are **served correctly on direct probe** — harness value-extraction from the down validator's cache.
-Detail: `docs/standalone/inferno-g10-findings.md` §Run 8; drivers: `docs/standalone/inferno/`.
+Harness stood up (docker g10 kit); server driven headlessly. **Run 9 (2026-07-03) — validator LIVE:**
+fixed the OOM (Docker VM → **12 GB** + validator **`-Xmx8g`**) and the base-URL mismatch (server
+launched with **`RONIN_PUBLIC_URL=http://host.docker.internal:3000`** so paginated/revinclude links
+are container-reachable). **Profile validation now executes** — `validation_test` **PASS** for Patient
++ Observation-lab (first time (g)(10) validation ran at all). The Encounter/DiagnosticReport
+`validation_test` fails are **external `tx.fhir.org` terminology errors, not structural
+non-conformance** (only error-level lines are remote-tx cache errors on SNOMED `Encounter.type`); fix
+= point the validator at our **local** terminology server. Remaining `Could not find status/intent
+values` search fails are **served correctly on direct probe** (harness value-extraction). Prior Run 8:
+zero `fhir_client` crashes, Patient 10 PASS, clinical search/read/revinclude clean. Detail:
+`docs/standalone/inferno-g10-findings.md` §Run 9; drivers: `docs/standalone/inferno/`.
 
 ## Priorities (from the deep-dive)
 Done: ✅#1 OPTIMIZE/VACUUM ✅#2 current-version ✅#2a Z-order ✅#3 concurrency ✅#4 Inferno started
