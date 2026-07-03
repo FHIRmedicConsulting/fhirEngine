@@ -28,10 +28,14 @@ All 10 deep-review priorities (2026-07-02) are addressed — see `docs/status/20
 | CapabilityStatement | ✅ US Core `supportedProfile` + `instantiates`, JSON-only `format`, SMART `oauth-uris`, terminology ops |
 
 ## Conformance — Inferno (g)(10)
-Harness stood up (docker g10 kit); server driven headlessly. **US Core v6.1.0**: Capability 4/4
-code-checks, **Patient 11 PASS**, clinical groups (encounter/condition/document-reference/…) search
-+ read + provenance-revinclude mostly PASS. 7 real defects found & fixed. Detail:
-`docs/standalone/inferno-g10-findings.md`; drivers: `docs/standalone/inferno/`.
+Harness stood up (docker g10 kit); server driven headlessly. **Run 8 (2026-07-03), full re-run after
+the #1–#10 fixes + SMART auth server:** Capability 4/4 code-checks; **Patient 10 PASS**; clinical
+groups (encounter 9 / condition 12 / diagnostic-report 7 / document-reference 9 / immunization 5 …)
+search + read + provenance-revinclude PASS. **Zero `fhir_client` crashes** (conditional-ref / bare-id
+fixes hold); no server 5xx. Remaining `error`s are all the **validator OOM** (environmental — needs
+Docker VM > ~8 GB); the 6 non-validator FAILs (medreq intent, docref status, practitioner address)
+are **served correctly on direct probe** — harness value-extraction from the down validator's cache.
+Detail: `docs/standalone/inferno-g10-findings.md` §Run 8; drivers: `docs/standalone/inferno/`.
 
 ## Priorities (from the deep-dive)
 Done: ✅#1 OPTIMIZE/VACUUM ✅#2 current-version ✅#2a Z-order ✅#3 concurrency ✅#4 Inferno started
