@@ -48,7 +48,11 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
   // production-grade — the current impl is an in-memory dev stub.)
   const operationsFor = (rt: string) => {
     const ops = [{ name: "validate", definition: "http://hl7.org/fhir/OperationDefinition/Resource-validate" }];
-    if (rt === "Patient") ops.push({ name: "everything", definition: "http://hl7.org/fhir/OperationDefinition/Patient-everything" });
+    if (rt === "Patient") ops.push(
+      { name: "everything", definition: "http://hl7.org/fhir/OperationDefinition/Patient-everything" },
+      { name: "export", definition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/patient-export" },
+    );
+    if (rt === "Group") ops.push({ name: "export", definition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/group-export" });
     if (TERMINOLOGY_OPS[rt]) ops.push(...TERMINOLOGY_OPS[rt]);
     return ops;
   };
@@ -100,7 +104,10 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
           { code: "transaction" }, { code: "batch" }, { code: "history-system" },
         ],
         resource: resources,
-        operation: [{ name: "validate", definition: "http://hl7.org/fhir/OperationDefinition/Resource-validate" }],
+        operation: [
+          { name: "validate", definition: "http://hl7.org/fhir/OperationDefinition/Resource-validate" },
+          { name: "export", definition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/export" }, // system-level Bulk Data
+        ],
       },
     ],
   };

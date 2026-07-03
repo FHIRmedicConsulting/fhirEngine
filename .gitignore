@@ -17,6 +17,7 @@ vitest.config.ts.timestamp-*.mjs
 delta/
 .delta*/
 delta-prov/
+.ronin-export/
 
 # --- Operator-licensed terminology release files — NEVER commit/redistribute ---
 # (SNOMED CT, LOINC, RxNorm, etc.; loaded under the operator's own license)

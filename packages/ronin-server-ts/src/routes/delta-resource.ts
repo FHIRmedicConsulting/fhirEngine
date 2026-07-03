@@ -12,10 +12,10 @@ import { fhirpathR4Model } from "../lib/fhirpath-model.js";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import { DeltaResourceRepository, type SearchCondition } from "../repository/delta-resource-repository.js";
 import { GenericResourceSchema } from "../repository/schemas.js";
-import { uuidv7 } from "../lib/uuid-v7.js";
 import { isR4CoreResource, r4CoreResourceTypes } from "../fhir-schema/r4-registry.js";
 import { searchParam } from "../fhir-schema/r4-search-params.js";
 import { patientCompartment } from "../fhir-schema/patient-compartment.js";
+import { mountExport } from "./export.js";
 import { enforceReadConsent, filterReadConsent, consentEnabled } from "../auth/consent-enforce.js";
 import { applyObligations } from "../auth/redact.js";
 import { buildDataFilter, type DataFilter } from "../auth/data-filter.js";
@@ -349,55 +349,8 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
   app.get("/Patient/:id/$everything", everything);
   app.post("/Patient/:id/$everything", everything);
 
-  // ---- Bulk Data $export (async-shaped; job completes synchronously at kickoff) ----
-  // DEV scope: in-memory job store (not persisted, single-process). NDJSON held in memory.
-  const exportJobs = new Map<string, { transactionTime: string; types: Record<string, string> }>();
-
-  const kickoffExport = (scope: "system" | "patient") => async (c: any) => {
-    const since = c.req.query("_since");
-    const typeFilter = c.req.query("_type")?.split(",").map((s: string) => s.trim()).filter(Boolean);
-    const candidates = scope === "patient" ? ["Patient", ...Object.keys(patientCompartment)] : r4CoreResourceTypes;
-    const transactionTime = new Date().toISOString();
-    const types: Record<string, string> = {};
-    for (const rt of candidates) {
-      if (!wh.hasTable(rt.toLowerCase())) continue;
-      if (typeFilter?.length && !typeFilter.includes(rt)) continue;
-      const lastUpdated = since ? [{ op: ">=", value: since }] : [];
-      const r = await repo(rt).searchByParams({ conds: [], lastUpdated, count: 100000, offset: 0 });
-      if (r.resources.length) types[rt] = r.resources.map((x) => JSON.stringify(x)).join("\n") + "\n";
-    }
-    const jobId = uuidv7();
-    exportJobs.set(jobId, { transactionTime, types });
-    c.header("Content-Location", `${baseUrl}/_export-status/${jobId}`);
-    return c.body(null, 202); // async kickoff accepted (this dev impl finishes immediately)
-  };
-  app.get("/$export", kickoffExport("system"));
-  app.get("/Patient/$export", kickoffExport("patient"));
-
-  app.get("/_export-status/:jobId", (c) => {
-    const jobId = c.req.param("jobId");
-    const job = exportJobs.get(jobId);
-    if (!job) throw notFound("bulk export job", jobId);
-    return c.json({
-      transactionTime: job.transactionTime,
-      request: `${baseUrl}/$export`,
-      requiresAccessToken: false,
-      output: Object.keys(job.types).map((type) => ({ type, url: `${baseUrl}/_export-file/${jobId}/${type}` })),
-      error: [],
-    });
-  });
-
-  app.get("/_export-file/:jobId/:type", (c) => {
-    const job = exportJobs.get(c.req.param("jobId"));
-    const ndjson = job?.types[c.req.param("type")];
-    if (ndjson === undefined) throw notFound("bulk export file", c.req.param("type"));
-    return c.body(ndjson, 200, { "Content-Type": "application/fhir+ndjson" });
-  });
-
-  app.delete("/_export-status/:jobId", (c) => {
-    exportJobs.delete(c.req.param("jobId"));
-    return c.body(null, 202); // cancellation accepted
-  });
+  // ---- Bulk Data $export (async, disk-backed) — see src/routes/export.ts ----
+  mountExport(app, wh, baseUrl);
 
   // GET /_history  — system-level history across all resource types (merged, paged).
   app.get("/_history", async (c) => {
