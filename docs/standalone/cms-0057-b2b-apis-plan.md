@@ -74,16 +74,50 @@ the **authorization semantics** (attribution, opt-out/opt-in consent) specific t
    (family+birthDate+gender); unique match required (422 on none/multiple); advertised in the
    CapabilityStatement. First slice — probabilistic/MPI matching + a consent gate on the match itself
    are follow-ups (consent on the subsequent clinical pull is already enforced, ADR-0030).
-3. Provider Access attribution Group + opt-out consent + scoped `$export`. *(medium)*
-4. Patient Access PDex/EOB surface. *(small–medium)*
-5. Prior Auth (PAS → CRD → DTR) — its own epic; likely a dedicated ADR for CDS Hooks + CQL. *(large)*
+3. ✅ **Provider Access** attribution Group + opt-out consent + scoped `$export` — **DONE** (2026-07-04).
+4. Patient Access PDex/EOB surface. *(small–medium — not yet built)*
+5. ✅ **Prior Auth FHIR-facing operations (PAS → CRD → DTR)** — **DONE** (2026-07-04), with the two
+   heavy engines explicitly deferred (see below).
 
 Each step is independently shippable and rides the existing auth/export/consent/audit substrate.
 
-## Decisions needed before building (OPEN QUESTIONS)
+## What is built now (2026-07-04)
+
+All the **FHIR-facing operations** of the prior-auth + exchange APIs, as real, tested first slices on
+the existing substrate. Every one is honest about where a deferred engine takes over:
+
+| API | Endpoint(s) | Built | Deferred engine |
+|-----|-------------|-------|-----------------|
+| HRex | `Patient/$member-match` | identifier/coverage/demographic match, unique-match required | probabilistic/MPI matching |
+| PAS | `Claim/$submit`, `Claim/$inquire` | parse Bundle, record/return `ClaimResponse` (preAuthRef) | **UM adjudication + FHIR⇄X12 278** |
+| CRD | `GET /cds-services`, `POST /cds-services/coverage-requirements` | CDS Hooks discovery + coverage card → DTR/PAS | **CQL coverage-rule evaluation** |
+| DTR | `Questionnaire/$questionnaire-package` | resolve Questionnaire + package cqf-library Libraries + answerValueSet ValueSets | **CQL auto-population** |
+| Payer-to-Payer | `$member-match` opt-in gate | active-permit `Consent` required (`RONIN_P2P_CONSENT_REQUIRED`) | — |
+| Provider Access | `Group/$export` opt-out filter | drop opted-out patients (`RONIN_PROVIDER_ACCESS_OPTOUT`) | — |
+
+Advertised in the CapabilityStatement (Claim submit/inquire, Patient member-match, Questionnaire
+questionnaire-package). CDS Hooks discovery is at `/cds-services`.
+
+## Deferred major components — NEED A DECISION before "real" prior-auth (OPEN)
+
+Two large engines are **intentionally not pulled in** (component-disclosure policy — no big dep without
+an ADR). The operations above are complete and useful without them (record/inquire/package/discover),
+but end-to-end automated prior-auth needs:
+
+1. **CQL engine** (drives CRD rule evaluation + DTR auto-population). No mature TS CQL engine exists;
+   options are the reference **Java** `cqframework` engine (JVM sidecar, like the delta sidecar) or a
+   subset TS interpreter. **Needs a component-disclosure/ADR.**
+2. **X12 278 translation** (the PAS gateway: FHIR ⇄ X12 278 request/response for payers whose UM
+   speaks X12). A specialized EDI component + a real Utilization Management decision source.
+   **Needs a component-disclosure/ADR.** (The current adjudication is an explicit stub.)
+
+Until those decisions: PAS adjudication is a stub, CRD returns an informational coverage card (no CQL),
+DTR packages forms/dependencies but does not populate. All three are labelled as such in code + here.
+
+## Still open (unchanged)
 
 - Which APIs are in scope for RoninStandAlone vs. the separate governance/ELT app? (Payer-specific
   APIs may not belong in a self-hostable FHIR server.)
-- CDS Hooks + a CQL engine are large new components — **needs a component-disclosure/ADR** before PAS.
 - Confirm the CMS-0057 compliance dates and which **actor** RoninStandAlone plays (provider-side vs.
   payer-side changes the API set).
+- Patient Access PDex/EOB surface (item 4) is not yet built.

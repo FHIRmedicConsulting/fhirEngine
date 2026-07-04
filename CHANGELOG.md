@@ -21,6 +21,15 @@ All notable changes to RoninStandAlone are documented here. Format based on
   pluggable rate limiting, body limits), **tamper-evident (hash-chained) audit** + `ronin-audit-verify`,
   SMART auth server + Backend Services + **UDAP B2B trust foundation**, and SBOM + npm-audit +
   pip-audit + gitleaks + Trivy in CI.
+- **UDAP B2B trust (hardened)** — RFC 5280 cert-path validation (basic constraints, key usage,
+  **name constraints**), revocation via static list + live **CRL** + **OCSP**, a durable registered-client
+  registry, `signed_metadata`, and tiered OAuth (RFC 9101 signed request).
+- **CMS-0057 B2B APIs (FHIR-facing first slices)** — Da Vinci **PAS** (`Claim/$submit` +
+  `Claim/$inquire`, records/returns a `ClaimResponse` with `preAuthRef`), **CRD** via CDS Hooks
+  (`/cds-services` discovery + `coverage-requirements` service), **DTR**
+  (`Questionnaire/$questionnaire-package`, packages a form + its cqf-library Libraries / answerValueSet
+  ValueSets), **HRex** `Patient/$member-match`, plus **exchange-consent gates** (Payer-to-Payer opt-in,
+  Provider Access opt-out — both env-gated, off by default). Advertised in the CapabilityStatement.
 - **Ops** — `/health` (liveness) + `/ready` (readiness), graceful SIGTERM/SIGINT shutdown,
   secure-by-default Docker Compose + production overlay, complete config reference.
 - Sidecar pytest suite; server-boot smoke test in CI.
@@ -30,6 +39,10 @@ All notable changes to RoninStandAlone are documented here. Format based on
 - Single-store serving only (medallion Gold read-path WIP); object-store restart-registration is local-FS only.
 - Composite/special search params + multi-field `_sort` are rejected under `Prefer: handling=strict`
   (not implemented as filters). L5 profile/IG conformance is partial (external HL7 validator is authoritative).
-- UDAP is a foundation (no revocation/CRL-OCSP, tiered OAuth, or persistent registry yet).
+- **CMS-0057 prior-auth is FHIR-facing only** — PAS adjudication is a **stub** (no real Utilization
+  Management / **X12 278** gateway), CRD returns an informational card (no **CQL** rule evaluation), and
+  DTR packages forms but does not auto-populate. A CQL engine and X12 278 translation are large deferred
+  components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). Patient
+  Access PDex/EOB surface is not yet built.
 
 [Unreleased]: https://github.com/419onscene/RoninStandAlone/commits/main
