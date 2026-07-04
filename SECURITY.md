@@ -11,7 +11,7 @@ production. We take security seriously and appreciate responsible disclosure.
 **Please do NOT open a public issue for security vulnerabilities.**
 
 Report privately via **GitHub Private Vulnerability Reporting** — open the repository's
-**Security → [Report a vulnerability](https://github.com/419onscene/fhirEngine/security/advisories/new)**
+**Security → [Report a vulnerability](https://github.com/FHIRmedicConsulting/fhirEngine/security/advisories/new)**
 tab. This keeps the report private to the maintainers until a fix is released.
 
 Please include:

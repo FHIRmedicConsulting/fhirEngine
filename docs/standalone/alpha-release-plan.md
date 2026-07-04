@@ -77,10 +77,18 @@ Notes / editorial judgment (not blind find-replace):
 3. Configure: default branch `main`, branch protection, Actions on, tester invites.
 4. Later: flip public when the alpha bar is met.
 
-## Open items needing your input
+## Resolved (2026-07-04)
 
-- **Org name** (blocks the push, not the prep).
-- **Naming scheme** — confirm the Phase 0 table (esp. npm scope `@fhir-engine`, env prefix
-  `FHIRENGINE_`, package dirs `packages/{fhir-types,server}`).
-- **Git history** — fresh initial commit (recommended) vs keep 75-commit history.
-- **Internal docs** — keep `CLAUDE.md` + `docs/status/` session logs in the public repo, or trim/move.
+- **Naming** — one-word scope `@fhirengine/*`, env prefix `FHIRENGINE_`, CLI `fhirengine-*`, dirs
+  `packages/{fhir-types,server}`, display `fhirEngine`. **Done + verified** (181 unit + 22 integration).
+- **Git history** — keep full history (76 commits).
+- **Internal docs** — `CLAUDE.md` + `docs/status/` dropped from the tip (still in history; scrub via
+  rewrite before going public if desired).
+- **GitHub** — org **FHIRmedicConsulting**, repo `fhirEngine`, **private** first; maintainer handle
+  stays `@419onscene`.
+
+## Post-alpha follow-ups (noted, not blocking)
+
+- History scrub (if the dropped internal docs must be gone from the public repo before flipping public).
+- Optional: rename the `op://Ronin/...` 1Password vault reference if/when the vault itself is renamed.
+- Enable GitHub **Private Vulnerability Reporting** in repo settings (SECURITY.md links depend on it).
