@@ -1,0 +1,15 @@
+# Prebuilt-images overlay — run fhirEngine from GHCR images instead of building locally.
+# Images are published by the release workflow on every version tag.
+#
+#   cd deploy
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml up --no-build -d
+#
+# Pin a version with FHIRENGINE_IMAGE_TAG (e.g. v0.1.0-alpha.1); default latest.
+# Stack production on top for PHI-capable deploys:
+#   docker compose -f docker-compose.yml -f docker-compose.images.yml -f docker-compose.prod.yml up --no-build -d
+services:
+  sidecar:
+    image: ghcr.io/fhirmedicconsulting/fhirengine-sidecar:${FHIRENGINE_IMAGE_TAG:-latest}
+  server:
+    image: ghcr.io/fhirmedicconsulting/fhirengine-server:${FHIRENGINE_IMAGE_TAG:-latest}

@@ -13,9 +13,10 @@ ENV FHIRENGINE_DELTA_SIDECAR_PORT=8077 \
     FHIRENGINE_DELTA_SIDECAR_HOST=0.0.0.0 \
     FHIRENGINE_DELTA_BASE=/data/delta
 
-# Least privilege: non-root user. NOTE: the /data volume (single-writer Delta store) must be
-# writable by uid 1000 — set the volume/ownership accordingly in your deploy.
-RUN useradd -m -u 1000 fhirengine && chown -R fhirengine:fhirengine /app
+# Least privilege: non-root user. /data/delta is created + owned here so the default
+# local-volume base works out of the box (a named volume inherits this ownership on first
+# mount). NOTE: BIND mounts don't inherit — chown the host dir to uid 1000 yourself.
+RUN useradd -m -u 1000 fhirengine && mkdir -p /data/delta && chown -R fhirengine:fhirengine /app /data
 USER fhirengine
 
 EXPOSE 8077

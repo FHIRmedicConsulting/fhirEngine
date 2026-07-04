@@ -7,8 +7,30 @@ on:
 
 permissions:
   contents: write   # create the GitHub Release
+  packages: write   # push images to GHCR
 
 jobs:
+  images:
+    name: Publish Docker images (GHCR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build + push (version tag + latest)
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          for part in server sidecar; do
+            IMG="ghcr.io/${OWNER}/fhirengine-${part}"
+            docker build -f "deploy/Dockerfile.${part}" -t "${IMG}:${GITHUB_REF_NAME}" -t "${IMG}:latest" .
+            docker push "${IMG}:${GITHUB_REF_NAME}"
+            docker push "${IMG}:latest"
+          done
+
   release:
     name: Create GitHub release (+ SBOM)
     runs-on: ubuntu-latest

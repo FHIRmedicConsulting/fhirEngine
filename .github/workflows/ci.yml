@@ -135,3 +135,22 @@ jobs:
           curl -fsS http://127.0.0.1:3000/health  | grep -q '"status":"ok"'
           curl -fsS http://127.0.0.1:3000/metadata | grep -q CapabilityStatement
           kill $SRV 2>/dev/null || true
+
+  docker:
+    name: docker images build + boot smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server image
+        run: docker build -f deploy/Dockerfile.server -t fhirengine-server:ci .
+      - name: Build sidecar image
+        run: docker build -f deploy/Dockerfile.sidecar -t fhirengine-sidecar:ci .
+      - name: Boot smoke (sidecar + server on a compose network, /ready end-to-end)
+        run: |
+          docker network create fhirengine-ci
+          docker run -d --name sidecar --network fhirengine-ci -v delta-ci:/data/delta fhirengine-sidecar:ci
+          docker run -d --name server --network fhirengine-ci -p 3000:3000 \
+            -e FHIRENGINE_DELTA_SIDECAR_URL=http://sidecar:8077 fhirengine-server:ci
+          for i in $(seq 1 60); do curl -fsS http://localhost:3000/ready >/dev/null && ok=1 && break; sleep 2; done
+          [ "${ok:-}" = 1 ] || { docker logs sidecar; docker logs server; echo "::error::containerized stack never became ready"; exit 1; }
+          curl -fsS http://localhost:3000/metadata | head -c 200

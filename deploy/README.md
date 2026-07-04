@@ -24,6 +24,21 @@ docker compose up --build            # server on http://localhost:3000
 
 (Or skip the wizard: `cp .env.example .env` and edit by hand.)
 
+## Run from prebuilt images (no build toolchain)
+
+Images are published to GHCR by the release workflow on every version tag
+(`ghcr.io/fhirmedicconsulting/fhirengine-server` + `…-sidecar`):
+
+```bash
+cd deploy
+docker compose -f docker-compose.yml -f docker-compose.images.yml pull
+docker compose -f docker-compose.yml -f docker-compose.images.yml up --no-build -d
+```
+
+Pin a version with `FHIRENGINE_IMAGE_TAG=v0.1.0-alpha.1` in `.env` (default `latest`).
+The images overlay stacks with the production overlay:
+`-f docker-compose.yml -f docker-compose.images.yml -f docker-compose.prod.yml`.
+
 Smoke it (synthetic data):
 ```bash
 curl -s -X POST http://localhost:3000/Patient -H 'Content-Type: application/fhir+json' \
@@ -71,8 +86,8 @@ checklist: `docs/standalone/security-hardening-and-deployment.md`.
 
 ## Status / limitations (honest)
 
-- **Not yet built/run in CI** — the Compose file is config-validated (`docker compose config`) but
-  images aren't built in CI here; build them on a Docker host before relying on them.
+- **Built + boot-smoked in CI** — every push builds both images and boots the containerized
+  stack to `/ready`; release tags publish them to GHCR.
 - Server currently runs via **tsx** (no compile step) — a follow-up compiles to `dist` for a leaner
   production image.
 - **Storage serving is single-store** (Bronze current-version); `FHIRENGINE_STORAGE_MODE=medallion`

@@ -54,6 +54,12 @@ All notable changes to fhirEngine are documented here. Format based on
   they don't fully satisfy. Set `FHIRENGINE_VALIDATION_PROFILES=declared` for the old behavior.
 
 ### Added (post-review hardening)
+- **Docker deployment option** — prebuilt images published to GHCR on every release tag
+  (`ghcr.io/fhirmedicconsulting/fhirengine-server` + `…-sidecar`), a
+  `docker-compose.images.yml` overlay to run them without a build toolchain
+  (`FHIRENGINE_IMAGE_TAG` pins a version), Deploy instructions in the root README, and a
+  CI job that builds both images and boot-smokes the containerized stack to `/ready` on
+  every push (the compose files were previously config-validated only).
 - **Object-store startup discovery** — sidecar `/list-tables` (pyarrow.fs) enumerates Delta
   tables on s3://gs://az:// bases; `registerExistingTables()` uses it, so a restarted server
   finds tables it didn't write. `optimize-all` now works on object stores too. Verified

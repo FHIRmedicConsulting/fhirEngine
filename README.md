@@ -81,6 +81,30 @@ FHIRENGINE_DELTA_SIDECAR_URL=http://127.0.0.1:8077 FHIRENGINE_DELTA_BASE=./delta
 Provisioning CLI: `scripts/fhirengine-terminology.ts` (`install-ig`, `load-terminology`,
 `expand-vsac`, `check-updates`, `reconcile-terminology`, `optimize`).
 
+## Deploy (Docker)
+
+Two containers — the TS/Hono server and the delta-rs storage sidecar — with Delta on a
+local volume or any object store (S3 / GCS / Azure / MinIO / R2).
+
+**Prebuilt images** (published to GHCR on every release; no toolchain needed):
+
+```bash
+cd deploy
+cp .env.example .env                 # or: cd ../packages/server && npm run init
+docker compose -f docker-compose.yml -f docker-compose.images.yml pull
+docker compose -f docker-compose.yml -f docker-compose.images.yml up --no-build -d
+curl -s http://localhost:3000/metadata | head -c 200
+```
+
+Pin a version with `FHIRENGINE_IMAGE_TAG=v0.1.0-alpha.1` (default `latest`).
+
+**Build from source:** same, without the images overlay — `docker compose up --build`.
+
+**Production (PHI-capable):** add the fail-closed overlay —
+`-f docker-compose.prod.yml` — which refuses to boot until auth, audit, and transport
+security are configured (ADR-0032). Both image builds and an end-to-end containerized
+boot smoke run in CI on every push. Full guide: [`deploy/README.md`](deploy/README.md).
+
 ## Configuration (env)
 
 | Var | Purpose |
