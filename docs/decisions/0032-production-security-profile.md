@@ -1,8 +1,8 @@
 # ADR-0032: Production Security Profile & Fail-Closed Enforcement
 
-- Status: **Proposed** 2026-07-04 (implemented behind config; awaiting Chad's ratification)
+- Status: **Accepted** 2026-07-04 (Chad — "mark the ADRs approved")
 - Date: 2026-07-04
-- Decider(s): Chad (pending)
+- Decider(s): Chad
 - Session: standalone security hardening
 - Related: [ADR-0030](0030-standalone-security-privacy-consent-enforcement.md), [ADR-0031](0031-tls-and-transport-security.md), [[phi-security-standards]]
 

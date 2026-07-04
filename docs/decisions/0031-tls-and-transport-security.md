@@ -1,8 +1,8 @@
 # ADR-0031: TLS & Transport Security Policy
 
-- Status: **Proposed** 2026-07-04 (implemented behind config; awaiting Chad's ratification per the ADR rule)
+- Status: **Accepted** 2026-07-04 (Chad — "mark the ADRs approved")
 - Date: 2026-07-04
-- Decider(s): Chad (pending)
+- Decider(s): Chad
 - Session: standalone security hardening
 - Related: [ADR-0030](0030-standalone-security-privacy-consent-enforcement.md), [ADR-0032](0032-production-security-profile.md), [[phi-security-standards]], `docs/research/2026-07-03-tls-and-cms-compliance-security-deep-dive.md`
 

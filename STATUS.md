@@ -25,7 +25,7 @@ All 10 deep-review priorities (2026-07-02) are addressed — see `docs/status/20
 | Terminology | ✅ local store (752k concepts loadable) + **tx-server endpoints**: `ValueSet/$validate-code`, `CodeSystem/$validate-code`, `ValueSet/$expand`, `CodeSystem/$lookup` |
 | Provisioning | ✅ IG install, operator file loaders (LOINC/SNOMED/RxNorm), VSAC `$expand`, quarantine-reconcile |
 | Security (enforcement) | ✅ SMART scopes + JWKS auth, **Backend Services** (client_credentials+private_key_jwt), AuditEvent + accounting, consent + DS4P labels, obligations; ✅ **SMART discovery** + 401/WWW-Authenticate |
-| Security (infrastructure) | ✅ **hardened TLS** (SP 800-52r2 ciphers, TLS1.2+), **production fail-closed profile**, **HTTP hardening** (security headers, enforced CORS, rate limiting, body limits), **SBOM + npm-audit + pip-audit CI** — see `docs/standalone/security-hardening-and-deployment.md` (ADR-0031/32/33/34, Proposed) |
+| Security (infrastructure) | ✅ **hardened TLS** (SP 800-52r2 ciphers, TLS1.2+), **production fail-closed profile**, **HTTP hardening** (security headers, enforced CORS, rate limiting, body limits), **SBOM + npm-audit + pip-audit CI** — see `docs/standalone/security-hardening-and-deployment.md` (ADR-0031/32/33/34, Accepted) |
 | CapabilityStatement | ✅ US Core `supportedProfile` + `instantiates`, JSON-only `format`, SMART `oauth-uris`, terminology ops, `TerminologyCapabilities` (`?mode=terminology`) |
 
 ## Conformance — Inferno (g)(10)

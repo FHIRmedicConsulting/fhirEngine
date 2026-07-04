@@ -1,8 +1,8 @@
 # ADR-0034: Supply-Chain Security — SBOM & Dependency Scanning
 
-- Status: **Proposed** 2026-07-04 (implemented in CI; awaiting Chad's ratification)
+- Status: **Accepted** 2026-07-04 (Chad — "mark the ADRs approved")
 - Date: 2026-07-04
-- Decider(s): Chad (pending)
+- Decider(s): Chad
 - Session: standalone security hardening
 - Related: [component-disclosure-review](../governance/component-disclosure-review.md), [[component-disclosure-policy]], `docs/research/2026-07-03-tls-and-cms-compliance-security-deep-dive.md`
 

@@ -31,10 +31,10 @@ Architecture Decision Records, chronological. Numbers never reused. Status: Prop
 | 0028 | [Cross-Product Platform Alignment — One Engine (delta-rs/DataFusion) + One Protocol Tier (TS/Hono) Across Ronin + RoninStandAlone](0028-cross-product-platform-alignment.md) | **Accepted** (direction ratified 2026-06-28; Ronin migration gated on delta-rs-on-Databricks-UC spike) | 2026-06-28 |
 | 0029 | [Runtime & Stack — TypeScript/Node + Hono (ratifies the un-ratified stack)](0029-runtime-and-stack.md) | **Accepted** (2026-06-28; supersedes Rejected ADR-0002) | 2026-06-28 |
 | 0030 | [Standalone Security, Privacy & Consent — server-side enforcement](0030-standalone-security-privacy-consent-enforcement.md) | **Accepted** (2026-06-28) | 2026-06-28 |
-| 0031 | [TLS & Transport Security Policy](0031-tls-and-transport-security.md) | **Proposed** (implemented; awaiting ratification) | 2026-07-04 |
-| 0032 | [Production Security Profile & Fail-Closed Enforcement](0032-production-security-profile.md) | **Proposed** (implemented; awaiting ratification) | 2026-07-04 |
-| 0033 | [HTTP-Tier Hardening (headers, CORS, rate limiting, body limits)](0033-http-tier-hardening.md) | **Proposed** (implemented; awaiting ratification) | 2026-07-04 |
-| 0034 | [Supply-Chain Security — SBOM & Dependency Scanning](0034-supply-chain-sbom-dependency-scanning.md) | **Proposed** (implemented in CI; awaiting ratification) | 2026-07-04 |
+| 0031 | [TLS & Transport Security Policy](0031-tls-and-transport-security.md) | **Accepted** (2026-07-04) | 2026-07-04 |
+| 0032 | [Production Security Profile & Fail-Closed Enforcement](0032-production-security-profile.md) | **Accepted** (2026-07-04) | 2026-07-04 |
+| 0033 | [HTTP-Tier Hardening (headers, CORS, rate limiting, body limits)](0033-http-tier-hardening.md) | **Accepted** (2026-07-04) | 2026-07-04 |
+| 0034 | [Supply-Chain Security — SBOM & Dependency Scanning](0034-supply-chain-sbom-dependency-scanning.md) | **Accepted** (2026-07-04) | 2026-07-04 |
 
 ## Queued (not yet drafted)
 
