@@ -6,6 +6,7 @@
  * Set the registry for production to lock down clients + redirect URIs.
  */
 import { createLocalJWKSet, createRemoteJWKSet } from "jose";
+import { getRegisteredClient } from "../udap/registered-clients.js";
 
 export interface OAuthClient {
   clientId: string;
@@ -22,8 +23,11 @@ function registry(): OAuthClient[] | null {
   try { return JSON.parse(raw) as OAuthClient[]; } catch { return null; }
 }
 
-/** Resolve a client, or null if a registry is configured and the id is unknown. */
+/** Resolve a client: UDAP dynamically-registered clients first, then the static registry.
+ *  Null if a static registry is configured and the id is unknown. */
 export function resolveClient(clientId: string): OAuthClient | null {
+  const dcr = getRegisteredClient(clientId); // UDAP DCR (ADR-0036)
+  if (dcr) return dcr;
   const reg = registry();
   if (!reg) return { clientId, type: "public" }; // dev: accept any public client (+PKCE enforced)
   return reg.find((c) => c.clientId === clientId) ?? null;

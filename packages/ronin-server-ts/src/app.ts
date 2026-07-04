@@ -24,6 +24,7 @@ import { buildCapabilityStatement } from "./conformance/capability-statement.js"
 import { buildTerminologyCapabilities } from "./conformance/terminology-capabilities.js";
 import { buildSmartConfiguration } from "./conformance/smart-configuration.js";
 import { oauthEnabled, oauthRoutes } from "./auth/oauth/oauth-routes.js";
+import { udapEnabled, udapRoutes } from "./auth/udap/udap-routes.js";
 import { mountHttpHardening } from "./security/http-hardening.js";
 import { securityProfile } from "./security/profile.js";
 import { FhirError } from "./lib/errors.js";
@@ -60,6 +61,10 @@ export function createDeltaApp(deps: DeltaAppDeps): Hono {
   // SMART authorization server (opt-in RONIN_OAUTH_ENABLED) — /oauth/authorize, /oauth/token,
   // /.well-known/jwks.json. Public (pre-auth-gate); issues tokens the gate verifies (local strategy).
   if (oauthEnabled()) app.route("/", oauthRoutes(deps.baseUrl));
+
+  // UDAP B2B trust (opt-in RONIN_UDAP_ENABLED) — .well-known/udap + trusted DCR (/udap/register).
+  // Public (pre-auth-gate); registered clients then authenticate at /oauth/token (ADR-0036).
+  if (udapEnabled()) app.route("/", udapRoutes(deps.baseUrl));
 
   // Audit (ADR-0030, control #2) — opt-in (RONIN_AUDIT_ENABLED). Mounted BEFORE the auth
   // gate so 401/403 denials are audited too; identity is read post-handler from c.var.auth.

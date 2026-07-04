@@ -24,7 +24,7 @@ All 10 deep-review priorities (2026-07-02) are addressed — see `docs/status/20
 | Storage (Delta) | ✅ OPTIMIZE + VACUUM (all tables), **Z-order by `id`**, **current-version `is_current`** (atomic demote), **single-writer serialization + sidecar retry**, **startup table discovery** |
 | Terminology | ✅ local store (752k concepts loadable) + **tx-server endpoints**: `ValueSet/$validate-code`, `CodeSystem/$validate-code`, `ValueSet/$expand`, `CodeSystem/$lookup` |
 | Provisioning | ✅ IG install, operator file loaders (LOINC/SNOMED/RxNorm), VSAC `$expand`, quarantine-reconcile |
-| Security (enforcement) | ✅ SMART scopes + JWKS auth, **Backend Services** (client_credentials+private_key_jwt), AuditEvent + accounting, consent + DS4P labels, obligations; ✅ **SMART discovery** + 401/WWW-Authenticate |
+| Security (enforcement) | ✅ SMART scopes + JWKS auth, **Backend Services** (client_credentials+private_key_jwt), **UDAP B2B trust foundation** (cert-chain software statements + trusted DCR + `.well-known/udap`, opt-in), AuditEvent + accounting, consent + DS4P labels, obligations; ✅ **SMART discovery** + 401/WWW-Authenticate |
 | Security (infrastructure) | ✅ **hardened TLS** (SP 800-52r2, TLS1.2+, **cert hot-reload**), **production fail-closed profile**, **HTTP hardening** (headers, enforced CORS, **pluggable** rate limiting, body limits), **audit hash-chain tamper-evidence** (`ronin-audit-verify`), **SBOM + npm-audit + pip-audit + gitleaks + Trivy CI** — see `docs/standalone/security-hardening-and-deployment.md` (ADR-0031..0035, Accepted) |
 | CapabilityStatement | ✅ US Core `supportedProfile` + `instantiates`, JSON-only `format`, SMART `oauth-uris`, terminology ops, `TerminologyCapabilities` (`?mode=terminology`) |
 

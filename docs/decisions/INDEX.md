@@ -36,6 +36,7 @@ Architecture Decision Records, chronological. Numbers never reused. Status: Prop
 | 0033 | [HTTP-Tier Hardening (headers, CORS, rate limiting, body limits)](0033-http-tier-hardening.md) | **Accepted** (2026-07-04) | 2026-07-04 |
 | 0034 | [Supply-Chain Security — SBOM & Dependency Scanning](0034-supply-chain-sbom-dependency-scanning.md) | **Accepted** (2026-07-04) | 2026-07-04 |
 | 0035 | [Audit-Log Integrity (tamper-evidence) & Retention](0035-audit-log-integrity-and-retention.md) | **Accepted** (2026-07-04) | 2026-07-04 |
+| 0036 | [UDAP B2B Trust — Software Statements & Trusted DCR (foundation)](0036-udap-b2b-trust.md) | **Accepted** (2026-07-04; foundation) | 2026-07-04 |
 
 ## Queued (not yet drafted)
 
