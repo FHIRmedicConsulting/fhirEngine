@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { buildTlsConfig, NIST_TLS12_CIPHERS } from "../../src/security/tls.js";
 import { evaluateSecurityPosture, securityProfile } from "../../src/security/profile.js";
-import { rateLimit } from "../../src/security/rate-limit.js";
+import { rateLimit, MemoryRateLimitStore, type RateLimitStore } from "../../src/security/rate-limit.js";
 import { mountHttpHardening } from "../../src/security/http-hardening.js";
 
 // --- env isolation ------------------------------------------------------------
@@ -148,6 +148,32 @@ describe("rateLimit", () => {
     expect((await get(app, "10.0.0.1")).status).toBe(200);
     expect((await get(app, "10.0.0.1")).status).toBe(429);
     expect((await get(app, "10.0.0.2")).status).toBe(200); // different IP unaffected
+  });
+
+  it("MemoryRateLimitStore sweeps expired windows", () => {
+    const s = new MemoryRateLimitStore();
+    s.hit("k", 1000, 0);
+    expect(s.size).toBe(1);
+    s.sweep(2000); // past resetAt
+    expect(s.size).toBe(0);
+  });
+
+  it("accepts a pluggable (async, shared-store-style) backend", async () => {
+    // A trivial shared-store stand-in proving the interface is honored + async-capable.
+    const counts = new Map<string, number>();
+    const store: RateLimitStore = {
+      async hit(key, windowMs, now) {
+        const count = (counts.get(key) ?? 0) + 1;
+        counts.set(key, count);
+        return { count, resetAt: now + windowMs };
+      },
+    };
+    const app = new Hono();
+    app.use("*", rateLimit({ limit: 1, windowMs: 60_000, now: () => 0, store }));
+    app.get("/x", (c) => c.text("ok"));
+    const hit = () => app.request("/x", { headers: { "x-forwarded-for": "7.7.7.7" } });
+    expect((await hit()).status).toBe(200);
+    expect((await hit()).status).toBe(429); // count 2 > limit 1, via the injected store
   });
 });
 

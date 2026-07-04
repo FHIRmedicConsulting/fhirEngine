@@ -81,8 +81,10 @@ Applied to every response. Defaults are safe; tune via env:
 
 ## 6. Supply chain (ADR-0034)
 
-CI `security` job runs on every push/PR: `npm audit` (fails on high/critical), a CycloneDX **SBOM**
-artifact, and `pip-audit` on the sidecar. Locally: `npm run audit`.
+CI runs on every push/PR: the **`security`** job — `npm audit` (fails on high/critical), a CycloneDX
+**SBOM** artifact, and `pip-audit` on the sidecar; and the **`scan`** job — **gitleaks** (secret
+scanning, full history) and **Trivy** (dependency CVEs + Dockerfile/IaC misconfig + secrets,
+HIGH/CRITICAL). Locally: `npm run audit`.
 
 ## 7. Pre-Alpha security checklist
 
@@ -97,6 +99,10 @@ artifact, and `pip-audit` on the sidecar. Locally: `npm run audit`.
 
 ## 8. Known follow-ups (post-Alpha)
 
-UDAP/TEFCA (SSRAA), distributed rate limiting, in-process cert hot-reload/ACME, secret + container
-image scanning (gitleaks/Trivy), OSS-Delta tamper-evidence & audit-retention integrity, and the
-Da Vinci IGs for the CMS-0057 B2B APIs. See the deep-dive doc's roadmap.
+**Done since Alpha baseline:** TLS **cert hot-reload** on renewal (`watchTlsCert`), **store-pluggable**
+rate limiter (`RateLimitStore`, ready for a shared store), **gitleaks + Trivy** CI scanning.
+
+**Remaining:** UDAP/TEFCA (SSRAA); a **shared-store rate limiter** (Redis — needs its own
+disclosure/ADR); in-process **ACME** issuance; container **image** scanning (Trivy `image`);
+OSS-Delta **tamper-evidence & audit-retention integrity**; and the **Da Vinci IGs** for the CMS-0057
+B2B APIs. See the deep-dive doc's roadmap.

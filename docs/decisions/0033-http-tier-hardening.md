@@ -35,6 +35,8 @@ denials), using **Hono built-ins only (no new dependency)**:
 
 - (+) Standard API hardening; non-breaking defaults (headers harmless, CORS permissive in dev,
   rate-limit off in dev) — verified against the full unit + delta suites.
-- (−) The rate limiter is **single-node** (per-process counters). Multi-node needs a shared store
-  (Redis) or ingress/LB limiting — **OPEN QUESTION / follow-up**; acceptable for Alpha (single node)
-  and as a per-instance backstop behind an LB.
+- (−) The default rate-limit store is **single-node** (per-process counters). The limiter is now
+  **store-pluggable** (`RateLimitStore`, async-capable) so a shared store (e.g. Redis) can make limits
+  consistent across instances — the shared-store *implementation* is a follow-up (would add a Redis
+  dependency → its own disclosure/ADR). Single-node is fine for Alpha and as a per-instance backstop
+  behind an LB.

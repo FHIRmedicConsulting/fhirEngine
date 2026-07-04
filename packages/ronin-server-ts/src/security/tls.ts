@@ -10,8 +10,10 @@
  * a reverse proxy / load balancer (the documented production default). See `profile.ts` for the
  * production fail-closed check that requires one or the other.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, watch } from "node:fs";
+import { dirname, basename } from "node:path";
 import { constants as cryptoConstants } from "node:crypto";
+import type { Server as HttpsServer } from "node:https";
 
 /**
  * FIPS-approved AEAD suites for TLS 1.2, in preference order (SP 800-52r2 §3.3.1.1).
@@ -68,4 +70,44 @@ export function buildTlsConfig(env: NodeJS.ProcessEnv = process.env): TlsConfig 
         cryptoConstants.SSL_OP_NO_TLSv1_1,
     },
   };
+}
+
+/**
+ * Hot-reload the TLS certificate/key without a restart (ADR-0031) — so an ACME/cert-manager
+ * renewal takes effect on new connections via `server.setSecureContext(...)`. Watches the parent
+ * directories of the cert/key (renewals typically replace files, breaking a direct file watch) and
+ * debounces bursty writes. Returns a stop() to close the watchers, or undefined if TLS is off.
+ */
+export function watchTlsCert(
+  server: HttpsServer,
+  onReload?: (err?: unknown) => void,
+  env: NodeJS.ProcessEnv = process.env,
+): (() => void) | undefined {
+  const certPath = env.RONIN_TLS_CERT;
+  const keyPath = env.RONIN_TLS_KEY;
+  if (!certPath || !keyPath) return undefined;
+
+  const files = new Set([basename(certPath), basename(keyPath)]);
+  const dirs = new Set([dirname(certPath), dirname(keyPath)]);
+  let timer: NodeJS.Timeout | undefined;
+
+  const reload = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      try {
+        const cfg = buildTlsConfig(env);
+        if (cfg.enabled && cfg.serverOptions) {
+          server.setSecureContext(cfg.serverOptions);
+          onReload?.();
+        }
+      } catch (err) {
+        onReload?.(err); // keep serving with the existing context on a bad/partial write
+      }
+    }, 500);
+  };
+
+  const watchers = [...dirs].map((d) =>
+    watch(d, (_event, filename) => { if (filename && files.has(filename.toString())) reload(); }),
+  );
+  return () => { for (const w of watchers) w.close(); if (timer) clearTimeout(timer); };
 }

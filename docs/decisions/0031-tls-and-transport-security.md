@@ -33,7 +33,10 @@ protocol-downgrade protection — it shipped whatever Node negotiated.
 
 - (+) Meets SP 800-52r2 / (g)(10)(viii) baseline; unblocks Inferno `standalone_auth_tls` when run
   over TLS. (+) No new dependency (Node stdlib `tls`/`https`).
-- (−) Certificate lifecycle (issuance, rotation, ACME/short-lived certs, hot-reload) is **not** yet
-  automated in-process — **OPEN QUESTION**: dev uses static self-signed / mkcert; prod is expected to
-  use proxy-managed certs. Revisit if in-process cert hot-reload becomes a requirement.
+- (+) **Cert hot-reload implemented** (`watchTlsCert`, wired in `server.ts`): watches the cert/key
+  directories and calls `server.setSecureContext(...)` on an ACME/cert-manager renewal — no restart,
+  new connections pick up the new cert. Bad/partial writes keep the previous context.
+- (−) Certificate *issuance/rotation* (ACME client) remains a deployment concern — dev uses static
+  self-signed / mkcert; prod is expected to use proxy- or cert-manager-managed certs. In-process ACME
+  is out of scope.
 - mTLS / UDAP channel security is out of scope here (later ADR).

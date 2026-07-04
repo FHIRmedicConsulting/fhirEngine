@@ -58,6 +58,23 @@ jobs:
           pip install pip-audit
           pip-audit -r requirements.txt
 
+  scan:
+    name: secret + vuln scan (gitleaks · trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history for secret scanning
+      - name: gitleaks (secret scan, full history)
+        run: |
+          VER=8.18.4
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" | tar xz gitleaks
+          ./gitleaks detect --source "$GITHUB_WORKSPACE" --no-banner --redact --exit-code 1
+      - name: Trivy (deps + IaC/Dockerfile misconfig + secrets)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.55.0
+          trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed "$GITHUB_WORKSPACE"
+
   integration:
     name: delta integration (sidecar)
     runs-on: ubuntu-latest

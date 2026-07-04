@@ -13,7 +13,8 @@ import pino from "pino";
 import { DeltaWarehouse } from "./lib/delta-warehouse.js";
 import { createDeltaApp } from "./app.js";
 import { startMaintenanceScheduler } from "./lib/maintenance.js";
-import { buildTlsConfig } from "./security/tls.js";
+import type { Server as HttpsServer } from "node:https";
+import { buildTlsConfig, watchTlsCert } from "./security/tls.js";
 import { evaluateSecurityPosture } from "./security/profile.js";
 
 const log = pino({ level: process.env.RONIN_LOG_LEVEL ?? "info" });
@@ -57,9 +58,17 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  serve({ fetch: app.fetch, port, ...tls }, (info) =>
+  const server = serve({ fetch: app.fetch, port, ...tls }, (info) =>
     log.info({ port: info.port, sidecarUrl, base, tls: tlsCfg.enabled, profile: posture.profile }, "ronin-standalone (delta) listening"),
   );
+
+  // Hot-reload the TLS cert on renewal (ACME/cert-manager) — no restart needed (ADR-0031).
+  if (tlsCfg.enabled) {
+    watchTlsCert(server as unknown as HttpsServer, (err) =>
+      err ? log.error({ err }, "TLS cert reload failed — keeping previous certificate")
+          : log.info("TLS certificate reloaded"),
+    );
+  }
 
   // Opt-in store maintenance: Delta compaction (+ optional vacuum) on an interval
   // (RONIN_MAINTENANCE_INTERVAL_MIN). Keeps small files in check as the store grows.

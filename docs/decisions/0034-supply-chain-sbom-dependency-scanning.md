@@ -14,8 +14,9 @@ makes SBOM/SCA table stakes for downstream adopters and for any future ATO.
 
 ## Decision
 
-Add a **`security` CI job** (`.github/workflows/ci.yml`) — **no new runtime dependency**:
+Add CI security jobs (`.github/workflows/ci.yml`) — **no new runtime dependency**:
 
+`security` job:
 - **`npm audit --omit=dev --audit-level=high`** — fails the build on high/critical advisories in the
   server's production tree (`npm run audit`).
 - **CycloneDX SBOM** via npm's built-in `npm sbom --sbom-format cyclonedx --omit dev`, uploaded as a
@@ -23,11 +24,16 @@ Add a **`security` CI job** (`.github/workflows/ci.yml`) — **no new runtime de
   the job runs `npm ci` there so the SBOM tree is complete.)
 - **`pip-audit`** against the Python sidecar's `requirements.txt`.
 
+`scan` job (version-pinned binaries, no marketplace-action dependency):
+- **gitleaks** — secret scanning across full git history (`--redact`, fail on findings).
+- **Trivy `fs`** — dependency CVEs + IaC/Dockerfile misconfig + secrets (`vuln,secret,misconfig`,
+  HIGH/CRITICAL, `--ignore-unfixed`).
+
 ## Consequences
 
 - (+) Vulnerability gate + machine-readable SBOM on every push/PR; covers both the TS server and the
   Python sidecar. (+) Uses only npm/pip built-ins + `pip-audit` (CI-only tool, disclosed here).
-- (−) `npm audit` advisory churn can cause transient CI failures — mitigated by `--audit-level=high`
-  (only high/critical block). **OPEN QUESTION:** whether to add secret-scanning (e.g. gitleaks) and
-  container image scanning (Trivy) — recommended follow-ups, not in this ADR.
-- License/attribution generation from the SBOM for the open-core distribution is a follow-up.
+- (−) `npm audit` / Trivy advisory churn can cause transient CI failures — mitigated by
+  `--audit-level=high` and Trivy `--ignore-unfixed` + HIGH/CRITICAL only.
+- **Container *image* scanning** (Trivy `image` on the built Docker images) and license/attribution
+  generation from the SBOM are follow-ups; the `scan` job currently covers the filesystem/deps/IaC.
