@@ -40,9 +40,21 @@ export async function validateCode(
     if (hit.length) return { result: true, status: "valid", display: hit[0].display };
     // Distinguish "not in VS" (invalid) from "VS not loaded" (unknown).
     const loaded = await wh.query("SELECT 1 FROM valueset_expansion WHERE valueset = ? LIMIT 1", [p.valueSet]);
-    return loaded.length
-      ? { result: false, status: "invalid", display: null, message: `code '${p.code}' not in ValueSet ${p.valueSet}` }
-      : { result: false, status: "unknown", display: null, message: `ValueSet ${p.valueSet} not loaded` };
+    if (!loaded.length) return { result: false, status: "unknown", display: null, message: `ValueSet ${p.valueSet} not loaded` };
+    // Loaded but PARTIAL (filter/intensional compose not locally expandable — see valueset_header):
+    // a miss proves nothing → unknown, never invalid. ORDER BY complete: any incomplete load wins
+    // (conservative). Stores without the header table (legacy) keep the old strict semantics.
+    try {
+      wh.registerTerminology("valueset_header");
+      const hdr = await wh.query<{ complete: boolean | string | null }>(
+        "SELECT complete FROM valueset_header WHERE url = ? ORDER BY complete ASC LIMIT 1",
+        [p.valueSet],
+      );
+      if (hdr.length && String(hdr[0].complete) === "false") {
+        return { result: false, status: "unknown", display: null, message: `ValueSet ${p.valueSet} expansion is partial (not locally expandable)` };
+      }
+    } catch { /* no header table (legacy store) → keep strict miss = invalid */ }
+    return { result: false, status: "invalid", display: null, message: `code '${p.code}' not in ValueSet ${p.valueSet}` };
   }
   if (p.system) {
     wh.registerTerminology("codesystem_concept");

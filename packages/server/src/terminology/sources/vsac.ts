@@ -68,8 +68,13 @@ export async function loadVsacExpansion(wh: DeltaWarehouse, oid: string, opts?: 
   const valueset = rows[0]?.valueset ?? oid;
   if (rows.length) {
     // Replace any prior expansion for this value set first → re-pull is idempotent (no dups).
-    await wh.deleteTerminology("valueset_expansion", `valueset = '${valueset.replace(/'/g, "''")}'`).catch(() => {});
+    const esc = valueset.replace(/'/g, "''");
+    await wh.deleteTerminology("valueset_expansion", `valueset = '${esc}'`).catch(() => {});
     await wh.writeTerminology("valueset_expansion", rows, "append");
+    // A $expand result is authoritative → mark the expansion COMPLETE (supersedes any
+    // partial header a local IG load wrote; misses may now be judged invalid again).
+    await wh.deleteTerminology("valueset_header", `url = '${esc}'`).catch(() => {});
+    await wh.writeTerminology("valueset_header", [{ url: valueset, version: null, complete: true }], "append");
   }
   return { valueset, expansions: rows.length };
 }
