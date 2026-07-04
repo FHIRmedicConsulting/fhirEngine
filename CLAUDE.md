@@ -53,10 +53,10 @@ never ratified — is a serious architecture, product, AND security problem
 review** rather than relying on them silently. The live audit is
 `docs/governance/component-disclosure-review.md`.
 
-Known open item: the **TS/Hono runtime stack is un-ratified** — ADR-0002 (Runtime &
-Stack) is *Rejected* and its replacement was never written. Chad chose "keep TS/Hono"
-(session 032); it needs a ratifying ADR. `@databricks/sql` should be removed from the
-standalone product.
+Resolved (2026-07-04): the **TS/Hono runtime stack is ratified** by **ADR-0029** (supersedes the
+Rejected ADR-0002), and **`@databricks/sql` is removed** (0 refs). Licensing (**ADR-0023**) and the
+security infrastructure (**ADR-0031..0036**) are Accepted. Keep the disclosure audit current as new
+deps are added.
 
 ## Storage topology (install-time choice)
 

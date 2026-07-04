@@ -1,0 +1,22 @@
+RoninStandAlone
+Copyright 2026 The RoninStandAlone Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---
+Attributions
+
+- HL7® FHIR® R4 StructureDefinitions and value sets used to generate the clean-room
+  columnar flattener and schemas are published by HL7 under CC0-1.0 (public domain).
+  FHIR® and HL7® are registered trademarks of Health Level Seven International;
+  use of these trademarks does not constitute endorsement.
+
+- Terminology content (SNOMED CT, LOINC, RxNorm, ICD, VSAC value sets) is NOT
+  distributed with this software. Operators supply licensed release files themselves;
+  RoninStandAlone loads them locally and never redistributes them. Respect each code
+  system's license (e.g. SNOMED CT via a member/affiliate license; LOINC terms of use;
+  UMLS Metathesaurus License).
+
+- Third-party open-source dependencies are enumerated in the CycloneDX SBOM produced by
+  CI (`npm sbom`) and in package manifests (package.json, sidecar/requirements.txt),
+  each under its own license.

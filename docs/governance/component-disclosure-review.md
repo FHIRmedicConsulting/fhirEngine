@@ -11,20 +11,26 @@ are awaiting Chad's explicit approve/replace/remove decision.**
 Status legend: ✅ approved (explicit Chad decision or ratified ADR) · ⚠️ needs review
 (undisclosed / un-ratified) · ❌ remove (wrong product / dead).
 
+> **Update 2026-07-04 (reconciliation):** the previously-flagged items are resolved — **TS/Hono +
+> @hono/node-server + pino + the toolchain (tsx/vitest/typescript) are ratified by ADR-0029**;
+> **`@databricks/sql` is removed** (0 refs in src + lockfile); the **heritage `src/auth/` module is
+> ratified by ADR-0030**. New security deps added since (all **Node/Hono built-ins + existing `jose`**,
+> **no new runtime dependency**) are covered by ADR-0031..0036. Rows below updated accordingly.
+
 ## Production server — `packages/ronin-server-ts`
 
 | Component | Version | Role | Provenance | Status |
 |---|---|---|---|---|
-| **hono** | ^4.6.0 | **web framework** | heritage fork; **ADR-0002 (runtime/stack) was REJECTED and its replacement never written** | ⚠️ **NEEDS REVIEW** — Chad chose "keep TS/Hono" (session 032); ratify via ADR |
-| **@hono/node-server** | ^1.13.0 | Node HTTP adapter for Hono | heritage | ⚠️ NEEDS REVIEW (with Hono) |
-| **@databricks/sql** | ^1.10.0 | Databricks SQL driver | heritage | ❌ REMOVE — the standalone product uses delta-rs/DataFusion; this is the dependency we forked away from |
-| **pino** | ^9.5.0 | logging | heritage, undisclosed | ⚠️ NEEDS REVIEW (ratify or choose deliberately) |
+| **hono** | ^4.6.0 | **web framework** (+ built-in `secure-headers`/`cors`/`body-limit` used by ADR-0033) | heritage fork | ✅ **approved** — ratified by **ADR-0029** |
+| **@hono/node-server** | ^1.13.0 | Node HTTP adapter for Hono | heritage | ✅ approved (ADR-0029) |
+| ~~**@databricks/sql**~~ | — | Databricks SQL driver | heritage | ✅ **REMOVED** — 0 refs in src + lockfile (the standalone uses delta-rs/DataFusion) |
+| **pino** | ^9.5.0 | logging | heritage | ✅ approved (ADR-0029). Follow-up: add `redact` paths (PHI-safe logs) |
 | **zod** | ^3.23.0 | REST-boundary validation | endorsed by Chad session 032 ("compliant with Zod") | ✅ approved |
 | **fhirpath** | ^4.11.0 | L4 FHIRPath invariant validation | added session 032 (BSD; identified in research) for the shared TS ValidationSupportChain | ✅ approved (in use; 0 vulns) |
 | **jose** | ^5 | JWT/JWKS verification for the auth gate (ADR-0030) | session 032 — security best practice is to NOT hand-roll JWT/crypto; `jose` is the standard audited lib (MIT) | ✅ approved (Chad, session 032; ADR-0030 Accepted) |
-| **heritage `src/auth/` module** | — | SMART/UDAP auth-middleware, scope-enforcer, multi-version SMART, consent-gate (DS4P), data-filter, token-introspection, IdP abstraction | heritage fork; never wired into the delta app until session 032 (ADR-0030) | ⚠️ **NEEDS REVIEW** — un-ratified heritage (design = ADR-0006); now being adopted/wired for the standalone. Flag for ratification with ADR-0030. Check `openid-client` (used by `idp/oidc-auth.ts`) before enabling the OIDC strategy. |
+| **heritage `src/auth/` module** | — | SMART/UDAP auth-middleware, scope-enforcer, multi-version SMART, consent-gate (DS4P), data-filter, token-introspection, IdP abstraction | heritage fork; wired for the standalone in session 032 | ✅ **approved** — ratified by **ADR-0030**; the new `src/auth/oauth/` (SMART auth server + Backend Services) + `src/auth/udap/` (ADR-0036) build on it (jose only). Check `openid-client` before enabling the OIDC strategy. |
 | **@ronin/fhir-types** | file: | generated FHIR R4 types (first-party) | internal | ✅ first-party |
-| @types/node, **tsx**, typescript, **vitest** | dev | build/test tooling | heritage, undisclosed | ⚠️ NEEDS REVIEW (ratify the toolchain) |
+| @types/node, **tsx**, typescript, **vitest** | dev | build/test tooling | heritage | ✅ approved (ADR-0029 toolchain) |
 
 ## Types codegen — `packages/ronin-fhir-types`
 

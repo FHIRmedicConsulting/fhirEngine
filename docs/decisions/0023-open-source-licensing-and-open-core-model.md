@@ -1,6 +1,6 @@
 # ADR-0023: Open-Source Licensing — Apache-2.0 Core + Open-Core Proprietary Modules
 
-- Status: **Proposed** (recommends Apache-2.0; the license choice + CLA text + any USCO registration need Chad's ratification and a one-time IP-attorney review). RoninStandAlone-specific.
+- Status: **Accepted** 2026-07-04 (Chad — Apache-2.0 ratified for the OSS alpha; `LICENSE` + `NOTICE` in place). Follow-ups (not blocking the license basis): **CLA** text and a one-time **IP-attorney review** of the open-core boundary + any USCO registration. RoninStandAlone-specific.
 - Date: 2026-06-27
 - Decider(s): Chad
 - Session: 032 (standalone fork)
