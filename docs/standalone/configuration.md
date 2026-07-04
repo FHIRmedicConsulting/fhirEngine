@@ -72,6 +72,7 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `RONIN_UDAP_OCSP_CHECK` | off | Enable live OCSP revocation (RFC 6960; queries the responder, verifies the signed response). |
 | `RONIN_UDAP_OCSP_URLS` | cert AIA | Extra/override OCSP responder URLs (comma-separated). |
 | `RONIN_UDAP_OCSP_HARD_FAIL` | soft-fail | `true` = reject when the OCSP responder is unreachable. |
+| `RONIN_UDAP_STRICT_PATH` | on | RFC 5280 path validation (basic constraints, key usage, name constraints); `false` to disable. |
 
 ## Audit, consent & HTTP hardening (ADR-0030/0033/0035)
 

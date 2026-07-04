@@ -49,5 +49,12 @@ Add a UDAP **foundation** (opt-in `RONIN_UDAP_ENABLED`, `RONIN_UDAP_TRUST_ANCHOR
     RFC 6960): queries the responder from the cert's AIA (or `RONIN_UDAP_OCSP_URLS`), pkijs builds the
     request and **verifies the signed response** (`RONIN_UDAP_OCSP_CHECK`). Both soft-fail by default
     (`*_HARD_FAIL` to fail closed) and are enforced in `verifySoftwareStatement`.
-  - Remaining: full RFC 5280 path validation + name-constraints; UDAP **certifications/endorsements**;
-    and community/trust-bundle management. Required before production TEFCA use.
+  - ~~RFC 5280 path validation + name-constraints~~ **DONE** (2026-07-04): `path-validation.ts` enforces
+    **basic constraints** (CA flag + pathLen), **key usage** (keyCertSign on CAs), and **name
+    constraints** (permitted/excluded dNSName/URI/rfc822 subtrees) over the full leaf→root path. On by
+    default (`RONIN_UDAP_STRICT_PATH`, `false` to disable); fail-closed. NB: pkijs'
+    `CertificateChainValidationEngine` does **not** reliably enforce name constraints (verified — it
+    accepted an out-of-subtree leaf), so name-constraint matching is implemented directly; pkijs is used
+    only to parse the extensions.
+  - Remaining: UDAP **certifications/endorsements** and community/**trust-bundle** management; policy
+    constraints / certificate-policies processing (RFC 5280 §6.1.3–4 full). Post-alpha.

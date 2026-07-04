@@ -10,6 +10,7 @@ import type { X509Certificate } from "node:crypto";
 import { verifyCertChain, loadTrustAnchors, leafPublicKey, parseX5c, issuerOf } from "./trust.js";
 import { CrlRevocationChecker, crlCheckEnabled } from "./crl.js";
 import { OcspRevocationChecker, ocspCheckEnabled } from "./ocsp.js";
+import { validateCertPath, strictPathEnabled } from "./path-validation.js";
 
 export class UdapError extends Error {}
 
@@ -34,6 +35,8 @@ export interface VerifyOptions {
   crlChecker?: CrlRevocationChecker;
   /** Injectable OCSP checker (tests); defaults to a real one when RONIN_UDAP_OCSP_CHECK=true. */
   ocspChecker?: OcspRevocationChecker;
+  /** Override RFC 5280 strict path validation (tests); defaults to strictPathEnabled(). */
+  strictPath?: boolean;
 }
 
 export async function verifySoftwareStatement(jwt: string, opts: VerifyOptions): Promise<SoftwareStatement> {
@@ -46,6 +49,12 @@ export async function verifySoftwareStatement(jwt: string, opts: VerifyOptions):
 
   const chain = verifyCertChain(x5c, anchors, opts.now);
   if (!chain.ok || !chain.leaf) throw new UdapError(`untrusted certificate: ${chain.reason}`);
+
+  // RFC 5280 strict path validation (basic constraints, key usage, name constraints, path length).
+  if (opts.strictPath ?? strictPathEnabled()) {
+    const pv = await validateCertPath(x5c, anchors);
+    if (!pv.ok) throw new UdapError(`certificate path validation failed: ${pv.reason}`);
+  }
 
   // Live revocation (opt-in, async): CRL and/or OCSP. CRL verifies vs any trusted issuer; OCSP needs
   // the cert's specific issuer. Either mechanism reporting "revoked" rejects the statement.
