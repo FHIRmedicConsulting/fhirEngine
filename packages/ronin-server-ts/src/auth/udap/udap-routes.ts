@@ -13,20 +13,39 @@
 import { Hono } from "hono";
 import { verifySoftwareStatement, UdapError } from "./software-statement.js";
 import { registerUdapClient, persistUdapClient, type UdapClientBackend } from "./registered-clients.js";
-import { loadTrustAnchors } from "./trust.js";
+import { SignJWT, importPKCS8 } from "jose";
+import { loadTrustAnchors, pemChainToX5c } from "./trust.js";
 import type { OAuthClient } from "../oauth/clients.js";
 
 export const udapEnabled = (): boolean => process.env.RONIN_UDAP_ENABLED === "true";
 
 const SUPPORTED_SCOPES = ["system/*.rs", "system/*.read", "openid", "fhirUser", "offline_access"];
 
+/**
+ * UDAP `signed_metadata`: a JWS of the server metadata, signed by the server's UDAP certificate
+ * (its chain in the `x5c` header), proving the metadata's authenticity to relying parties. Emitted
+ * only when RONIN_UDAP_SERVER_KEY (PEM PKCS8) + RONIN_UDAP_SERVER_CERT (PEM chain) are configured.
+ */
+async function signMetadata(baseUrl: string, claims: Record<string, unknown>, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const keyPem = env.RONIN_UDAP_SERVER_KEY, certPem = env.RONIN_UDAP_SERVER_CERT;
+  if (!keyPem || !certPem) return null;
+  try {
+    const key = await importPKCS8(keyPem, "RS256");
+    const x5c = pemChainToX5c(certPem);
+    if (!x5c.length) return null;
+    return await new SignJWT(claims)
+      .setProtectedHeader({ alg: "RS256", x5c })
+      .setIssuer(baseUrl).setSubject(baseUrl).setIssuedAt().setExpirationTime("1h").sign(key);
+  } catch { return null; }
+}
+
 export function udapRoutes(baseUrl: string, wh?: UdapClientBackend): Hono {
   const app = new Hono();
   const registrationEndpoint = `${baseUrl}/udap/register`;
 
-  // UDAP server metadata (community discovery).
-  app.get("/.well-known/udap", (c) =>
-    c.json({
+  // UDAP server metadata (community discovery) + optional signed_metadata.
+  app.get("/.well-known/udap", async (c) => {
+    const metadata: Record<string, unknown> = {
       udap_versions_supported: ["1"],
       udap_certifications_supported: [],
       udap_certifications_required: [],
@@ -37,8 +56,17 @@ export function udapRoutes(baseUrl: string, wh?: UdapClientBackend): Hono {
       token_endpoint_auth_methods_supported: ["private_key_jwt"],
       registration_endpoint: registrationEndpoint,
       registration_endpoint_jwt_signing_alg_values_supported: ["RS256", "ES256"],
-    }),
-  );
+    };
+    const signed = await signMetadata(baseUrl, {
+      authorization_endpoint: metadata.authorization_endpoint,
+      token_endpoint: metadata.token_endpoint,
+      registration_endpoint: metadata.registration_endpoint,
+      grant_types_supported: metadata.grant_types_supported,
+      scopes_supported: metadata.scopes_supported,
+      token_endpoint_auth_methods_supported: metadata.token_endpoint_auth_methods_supported,
+    }, process.env);
+    return c.json(signed ? { ...metadata, signed_metadata: signed } : metadata);
+  });
 
   // Trusted Dynamic Client Registration.
   app.post("/udap/register", async (c) => {

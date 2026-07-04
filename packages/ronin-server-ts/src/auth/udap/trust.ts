@@ -61,6 +61,17 @@ export function parseX5c(x5c: string[]): X509Certificate[] {
   return x5c.map((b64) => new X509Certificate(Buffer.from(b64, "base64")));
 }
 
+/** Convert a PEM cert chain (leaf-first, possibly multiple concatenated) to an `x5c` array
+ *  (base64 DER, no PEM armor) — the JWS header form for UDAP signed_metadata / software statements. */
+export function pemChainToX5c(pem: string): string[] {
+  const out: string[] = [];
+  for (const block of pem.split(/(?=-----BEGIN CERTIFICATE-----)/g)) {
+    const m = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(block);
+    if (m) out.push(m[1]!.replace(/\s+/g, ""));
+  }
+  return out;
+}
+
 const isAnchor = (c: X509Certificate, anchors: X509Certificate[]): boolean =>
   anchors.some((a) => a.fingerprint256 === c.fingerprint256);
 

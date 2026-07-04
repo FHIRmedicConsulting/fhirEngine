@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { X509Certificate } from "node:crypto";
 import { Hono } from "hono";
-import { SignJWT, importPKCS8 } from "jose";
+import { SignJWT, importPKCS8, decodeProtectedHeader, decodeJwt } from "jose";
 import { verifySoftwareStatement, UdapError } from "../../src/auth/udap/software-statement.js";
 import { udapRoutes } from "../../src/auth/udap/udap-routes.js";
 import { getRegisteredClient, resetRegisteredClients, loadRegisteredClients, type UdapClientBackend } from "../../src/auth/udap/registered-clients.js";
@@ -32,6 +32,7 @@ function mintCa(dir: string, cn: string, clientUri: string) {
     caPath: p(`${cn}-ca.crt`),
     caCert: new X509Certificate(read(p(`${cn}-ca.crt`), "utf8")),
     leafKeyPem: read(p(`${cn}-leaf.key`), "utf8"),
+    leafCertPem: read(p(`${cn}-leaf.crt`), "utf8"),
     leafDerB64: Buffer.from(leafDer).toString("base64"),
   };
 }
@@ -165,5 +166,26 @@ describe("UDAP metadata", () => {
     expect(meta.udap_versions_supported).toContain("1");
     expect(meta.registration_endpoint).toBe(REG);
     expect(meta.token_endpoint_auth_methods_supported).toContain("private_key_jwt");
+    expect(meta.signed_metadata).toBeUndefined(); // no server key/cert configured → unsigned
+  });
+
+  it.skipIf(!opensslOk)("emits verifiable signed_metadata when a server key + cert are configured", async () => {
+    process.env.RONIN_UDAP_SERVER_KEY = trusted.leafKeyPem;
+    process.env.RONIN_UDAP_SERVER_CERT = trusted.leafCertPem;
+    try {
+      const app = new Hono();
+      app.route("/", udapRoutes(BASE));
+      const meta = await (await app.request("/.well-known/udap")).json();
+      expect(typeof meta.signed_metadata).toBe("string");
+      const hdr = decodeProtectedHeader(meta.signed_metadata);
+      expect(Array.isArray(hdr.x5c) && (hdr.x5c as unknown[]).length).toBeTruthy(); // cert chain in header
+      const payload = decodeJwt(meta.signed_metadata);
+      expect(payload.iss).toBe(BASE);
+      expect(payload.token_endpoint).toBe(`${BASE}/oauth/token`);
+      expect(payload.registration_endpoint).toBe(REG);
+    } finally {
+      delete process.env.RONIN_UDAP_SERVER_KEY;
+      delete process.env.RONIN_UDAP_SERVER_CERT;
+    }
   });
 });
