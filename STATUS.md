@@ -1,15 +1,14 @@
 # fhirEngine — STATUS
 
-_Living snapshot of where the project is. Point-in-time narrative + resume runbook live in
-`docs/status/latest.md` (currently → session-033, 2026-07-02)._
+_Living snapshot of where the project is._
 
 **Product:** open-source (Apache-2.0), no-Databricks FHIR R4 server on OSS Delta Lake
 (delta-rs / DataFusion via a Python sidecar; TypeScript/Hono REST tier). Local-first.
 
-**Health:** **149 delta + 155 unit + 8 sidecar (pytest) green · typecheck + lint clean · CI hardened**
+**Health:** **175 integration + 198 unit + 11 sidecar (pytest) green · typecheck + lint clean · CI hardened**
 (unit · supply-chain audit/SBOM/pip-audit · gitleaks+Trivy scan · integration w/ fail-hard sidecar +
-boot smoke · release workflow) · git working tree clean. Both deep reviews addressed:
-`docs/status/2026-07-02-deep-review.md` and the **OSS-alpha review** `docs/status/2026-07-04-oss-alpha-review.md`
+boot smoke · release workflow). Two internal deep reviews (2026-07-02, and the OSS-alpha
+review 2026-07-04) fully addressed
 (all 10 items done — deploy secure-by-default, honest claims, SECURITY.md/CONTRIBUTING/CoC, config
 reference, unsupported-search rejection, ADR-0023 ratified + NOTICE, graceful shutdown + `/ready`,
 sidecar tests).
@@ -23,9 +22,9 @@ sidecar tests).
 | FHIR R4 REST surface | ✅ CRUD, history (instance/type/system), vread, CapabilityStatement, `$validate`, batch/transaction, conditional create/update/delete |
 | Search | ✅ token/string/date/number/quantity/uri/**reference (bare-id + full)**, modifiers, chaining, `_has`, `_include`/`_revinclude`, `_sort` (first field)/`_summary`/`_elements`, paging, **GET + POST `_search`**. **Composite/special + multi-field `_sort` are NOT silently ignored** — rejected under `Prefer: handling=strict` (unknown params lenient-ignored by default per FHIR); composite/special search **not** implemented |
 | Operations | ✅ `$everything`, `$export` (dev), `$validate`, **`Patient/$member-match`** (HRex, CMS-0057 Payer-to-Payer) |
-| Validation (pre-Bronze) | ✅ structural + cardinality + **choice-type `[x]`** + terminology bindings (3-state) + **L4 FHIRPath invariants (top-level/one-level, R4-model-aware; deeper contexts deferred)** + installed-profile **required-elements + required bindings + required (value/pattern) slices** (NOT full L5 IG conformance — no closed/max slices, discriminators, or must-support; the authoritative profile verdict is the external HL7 validator) + slicing (first cut) |
+| Validation (pre-Bronze) | ✅ structural + cardinality + **choice-type `[x]`** + terminology bindings (3-state) + **L4 FHIRPath invariants (top-level/one-level, R4-model-aware; deeper contexts deferred)** + installed-profile **required-elements + required bindings + required (value/pattern) slices** — **operator-opt-in** via `FHIRENGINE_VALIDATION_PROFILES` (package id / canonical URL / `declared`; default = base FHIR only) (NOT full L5 IG conformance — no closed/max slices, discriminators, or must-support; the authoritative profile verdict is the external HL7 validator) + slicing (first cut) |
 | Transactions | ✅ urn:uuid resolution + **conditional references** (`Type?identifier=…` → literal) + **`ifNoneExist`** conditional create |
-| Storage (Delta) | ✅ OPTIMIZE + VACUUM (all tables), **Z-order by `id`**, **current-version `is_current`** (atomic demote), **single-writer serialization + sidecar retry**, **startup table discovery** (⚠️ **single-store serving only**: `FHIRENGINE_STORAGE_MODE=medallion` Gold-read-path not wired; startup discovery is **local-FS only** — object-store restart-registration WIP) |
+| Storage (Delta) | ✅ OPTIMIZE + VACUUM (all tables), **Z-order by `id`**, **current-version `is_current`** (atomic demote), **single-writer serialization + sidecar retry**, **startup table discovery** (local FS **and object stores** via sidecar `/list-tables`, pyarrow.fs; verified vs MinIO) (⚠️ **single-store serving only**: `FHIRENGINE_STORAGE_MODE=medallion` Gold-read-path not wired) |
 | Terminology | ✅ local store (752k concepts loadable) + **tx-server endpoints**: `ValueSet/$validate-code`, `CodeSystem/$validate-code`, `ValueSet/$expand`, `CodeSystem/$lookup` |
 | Provisioning | ✅ IG install, operator file loaders (LOINC/SNOMED/RxNorm), VSAC `$expand`, quarantine-reconcile |
 | Security (enforcement) | ✅ SMART scopes + JWKS auth, **Backend Services** (client_credentials+private_key_jwt), **UDAP B2B trust** (cert-chain software statements + **revocation: static list + live signature-verified CRL + OCSP** + **trusted DCR w/ durable registry** + **signed_metadata** + **tiered OAuth/RFC 9101 signed request** + **RFC 5280 path validation** (basic constraints / key usage / name constraints), opt-in), AuditEvent + accounting, consent + DS4P labels, obligations; ✅ **SMART discovery** + 401/WWW-Authenticate |
@@ -78,14 +77,13 @@ breadth (codeableConcept validate, `$expand` filter/paging/total) · ✅ search 
 ## Remaining follow-ups (explicitly deferred, lower priority)
 ✅ SMART **Backend Services** (client_credentials + private_key_jwt) — DONE. Remaining:
 **composite** search params + multi-field `_sort` (codegen) · slicing max/closed + L4 invariants
-at depth ≥2 · **medallion** Gold-read-path (single store is the supported topology) · object-store
-**enumeration** for restart-registration + whole-store optimize · run the full **Inferno (g)(10)**
-suites end-to-end (auth server + backend services now make the OAuth-gated suites reachable).
+at depth ≥2 · **medallion** Gold-read-path (single store is the supported topology) · run the full
+**Inferno (g)(10)** suites end-to-end (auth server + backend services now make the OAuth-gated
+suites reachable).
 
 ## Run / resume
-See `docs/status/session-033-2026-07-02.md` §6 (rebuild `.delta-inferno` with **rsync**, start
-sidecar+server, reload Synthea, drive Inferno). Tests: `npm run test:delta` (needs sidecar) ·
-`npm run test:unit`.
+Guided setup: `cd packages/server && npm run init` (writes `deploy/.env`, prints run +
+provisioning commands). Tests: `npm run test:delta` (needs sidecar) · `npm run test:unit`.
 
 ## Security infrastructure (2026-07-04, ADR-0031..0036 Accepted)
 Alpha security baseline built + the ranked deferred items: **#1** TLS hardening (SP 800-52r2 + cert

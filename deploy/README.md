@@ -17,10 +17,12 @@ Single-writer invariant (ADR-0026): run **one** sidecar.
 ## Run locally
 
 ```bash
-cd deploy
-cp .env.example .env          # defaults to a local Delta volume
-docker compose up --build     # server on http://localhost:3000
+cd packages/server && npm run init   # guided setup — writes deploy/.env
+cd ../../deploy
+docker compose up --build            # server on http://localhost:3000
 ```
+
+(Or skip the wizard: `cp .env.example .env` and edit by hand.)
 
 Smoke it (synthetic data):
 ```bash

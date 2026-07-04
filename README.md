@@ -38,7 +38,8 @@ HTTP (Hono)
   conditional create/update/delete.
 - **Validation prior to Bronze** — structural + cardinality + terminology bindings +
   L4 FHIRPath invariants (top-level/one-level) + slicing + installed-profile required-elements
-  & bindings; invalid → resource-level dead-letter. Optional quarantine-and-auto-resolve for
+  & bindings (profile enforcement is operator-opt-in via `FHIRENGINE_VALIDATION_PROFILES`;
+  default validates the base FHIR version only); invalid → resource-level dead-letter. Optional quarantine-and-auto-resolve for
   unknown terminology. _(Not full L5 IG conformance — no closed/max slices, discriminators, or
   must-support; the authoritative profile verdict is the external HL7 validator.)_
 - **Provisioning + terminology** — install FHIR IG packages (profiles + carried
@@ -53,6 +54,17 @@ HTTP (Hono)
   See `docs/standalone/security-hardening-and-deployment.md` (ADR-0031..0036).
 
 ## Quickstart
+
+**Guided setup (recommended):** the wizard walks through storage, security profile,
+auth, TLS, and audit, writes `deploy/.env`, previews the boot-time posture check
+(ADR-0032), and prints the exact run + provisioning commands:
+
+```bash
+cd packages/server && npm install
+npm run init
+```
+
+**Manual dev boot** (no wizard — dev defaults, synthetic data only):
 
 ```bash
 # 1. Python sidecar (delta-rs / DataFusion)

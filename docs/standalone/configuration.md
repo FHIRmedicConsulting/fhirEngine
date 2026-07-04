@@ -1,7 +1,9 @@
 # fhirEngine — Configuration Reference
 
-All configuration is via environment variables (12-factor). Copy `deploy/.env.example` → `deploy/.env`
-and edit. Secrets: inject via your orchestrator / 1Password `op run` — never commit a real `.env`.
+All configuration is via environment variables (12-factor). The guided setup
+(`cd packages/server && npm run init`) walks through the common path and writes `deploy/.env`;
+or copy `deploy/.env.example` → `deploy/.env` and edit by hand. Secrets: inject via your
+orchestrator / 1Password `op run` — never commit a real `.env`.
 
 **Legend:** _req(prod)_ = required to boot under `FHIRENGINE_SECURITY_PROFILE=production` (fail-closed,
 ADR-0032). Related: the security runbook (`security-hardening-and-deployment.md`).
@@ -26,6 +28,12 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_PUBLIC_URL` | `http://localhost:<port>` | Externally-reachable base URL — used in FHIR links/pagination. Set to the real hostname behind a proxy. |
 | `FHIRENGINE_LOG_LEVEL` | `info` | pino log level. |
 | `FHIRENGINE_MIGRATE_IS_CURRENT` | off | One-time `is_current` backfill on upgrade (set `true` once). |
+
+## Validation
+
+| Var | Default | Description |
+|---|---|---|
+| `FHIRENGINE_VALIDATION_PROFILES` | — | Conformance-profile requirement for incoming resources. Empty = validate against the installed FHIR version only (structure, invariants, base bindings); `meta.profile` claims are stored, not enforced. Comma-separated entries: an installed IG package id (`hl7.fhir.us.core` — enforce its profile per resource type), a profile canonical URL, or `declared` (enforce each resource's `meta.profile` claims). Requires the referenced IG to be installed (`fhirengine-terminology install-ig`). |
 
 ## Security profile & transport (ADR-0031/0032)
 

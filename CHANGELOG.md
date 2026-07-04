@@ -35,10 +35,51 @@ All notable changes to fhirEngine are documented here. Format based on
 - **Ops** — `/health` (liveness) + `/ready` (readiness), graceful SIGTERM/SIGINT shutdown,
   secure-by-default Docker Compose + production overlay, complete config reference.
 - Sidecar pytest suite; server-boot smoke test in CI.
+- **Interactive setup wizard** — `cd packages/server && npm run init`: guided walkthrough
+  (deployment mode, storage backend incl. S3/GCS/Azure/MinIO/R2, security profile, auth,
+  TLS, audit, HTTP hardening) that writes `deploy/.env`, can generate a persistent RS256
+  OAuth signing keypair, previews the boot-time fail-closed posture check, and prints the
+  exact run + IG-provisioning commands. Re-run safe (existing `.env` seeds defaults, backup on write).
+- **`FHIRENGINE_VALIDATION_PROFILES`** — operator-configured conformance enforcement:
+  an installed IG package id (e.g. `hl7.fhir.us.core`), profile canonical URLs, and/or
+  `declared` (enforce each resource's `meta.profile` claims).
+- **S3-compatible object stores** (MinIO / Cloudflare R2) — `AWS_ENDPOINT_URL`/`AWS_ENDPOINT`
+  + `AWS_ALLOW_HTTP` wired through env/compose/wizard; verified end-to-end against MinIO.
+
+### Changed
+- **Profile validation is now opt-in** (`FHIRENGINE_VALIDATION_PROFILES`). By default the
+  server validates against the installed FHIR version only (structure, invariants, base
+  bindings); a resource claiming a profile in `meta.profile` is no longer rejected for
+  missing that profile's constraints — real-world EHR exports routinely stamp profiles
+  they don't fully satisfy. Set `FHIRENGINE_VALIDATION_PROFILES=declared` for the old behavior.
+
+### Added (post-review hardening)
+- **Object-store startup discovery** — sidecar `/list-tables` (pyarrow.fs) enumerates Delta
+  tables on s3://gs://az:// bases; `registerExistingTables()` uses it, so a restarted server
+  finds tables it didn't write. `optimize-all` now works on object stores too. Verified
+  end-to-end against MinIO (write → kill → fresh boot → discovery → read/search).
+- **ValueSet expansion completeness tracking** (`valueset_header`) — IG loads record whether
+  each expansion is complete; VSAC `$expand` pulls mark it complete (authoritative).
+
+### Fixed
+- **Partial ValueSet expansions no longer hard-reject valid codes** — a membership miss
+  against a ValueSet whose compose couldn't be fully expanded locally (filter/intensional
+  includes like US Core's LOINC document-type filter, valueSet imports, unloaded systems,
+  excludes) now degrades to `unknown` (quarantine/pending) instead of `invalid` (422).
+  Also: an intensional include on a *loaded* system no longer dumps the entire CodeSystem
+  into the expansion (over-inclusion).
+- Slice-qualified required bindings (e.g. US Core's optional `screening-assessment`
+  Condition.category slice) were enforced against **every** node at the element path,
+  false-rejecting valid resources — the slice qualifier lives in element `id`/`sliceName`,
+  which the profile-spec extractor never checked.
+- `docker-compose.yml` silently dropped most auth/OAuth/JWKS/TLS/rate-limit env vars
+  (they were documented in `.env.example` but never passed to the server container).
+- Validator caches are invalidated on IG install (freshly installed profiles are visible
+  without a restart).
 
 ### Known limitations (pre-alpha)
 - Not ONC (g)(10)-certified — individual US Core groups pass in Inferno; full suite not run end-to-end.
-- Single-store serving only (medallion Gold read-path WIP); object-store restart-registration is local-FS only.
+- Single-store serving only (medallion Gold read-path WIP).
 - Composite/special search params + multi-field `_sort` are rejected under `Prefer: handling=strict`
   (not implemented as filters). L5 profile/IG conformance is partial (external HL7 validator is authoritative).
 - **CMS-0057 prior-auth is FHIR-facing only** — PAS adjudication is a **stub** (no real Utilization

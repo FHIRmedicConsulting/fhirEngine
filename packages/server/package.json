@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
+    "init": "tsx scripts/fhirengine-init.ts",
     "build:deps": "tsc -p ../fhir-types/tsconfig.json",
     "build": "tsc",
     "prebuild": "npm run build:deps",
