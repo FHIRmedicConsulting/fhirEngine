@@ -13,6 +13,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import { loadTerminologyResources } from "../terminology/terminology-loader.js";
+import { resetValidationCaches } from "../validation/validation-chain.js";
 
 export interface InstallResult {
   package: string;
@@ -60,6 +61,7 @@ export async function installIgPackage(
     json: JSON.stringify(sd),
   }));
   if (sdRows.length) await wh.writeConformance("structuredefinition", sdRows);
+  resetValidationCaches(); // newly installed profiles must be visible to the validator
 
   // Terminology (CS/VS/CM) → terminology store.
   const term = await loadTerminologyResources(wh, resources);

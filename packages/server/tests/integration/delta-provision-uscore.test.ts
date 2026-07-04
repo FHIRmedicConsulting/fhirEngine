@@ -5,7 +5,7 @@
  *   FHIRENGINE_DELTA_SIDECAR_URL=http://127.0.0.1:8083 FHIRENGINE_DELTA_BASE=./.delta-test \
  *     npx vitest run tests/integration/delta-provision-uscore.test.ts
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { existsSync } from "node:fs";
 import { DeltaWarehouse } from "../../src/lib/delta-warehouse.js";
 import { createDeltaApp } from "../../src/app.js";
@@ -29,6 +29,7 @@ describe.skipIf(!canRun)("Provision US Core 6.1.0 on R4 Core + validate", () => 
     app.fetch(new Request(`http://test${p}`, { method: m, headers: { "Content-Type": "application/fhir+json" }, body: b ? JSON.stringify(b) : undefined }));
 
   beforeAll(async () => {
+    process.env.FHIRENGINE_VALIDATION_PROFILES = "declared"; // these suites assert claimed-profile enforcement (opt-in since the base-only default)
     if (!canRun) return;
     if (!(await wh.health())) throw new Error(`sidecar not reachable at ${SIDECAR}`);
     r4Result = await installIgPackage(wh, R4, "hl7.fhir.r4.core#4.0.1");        // baseline
@@ -44,6 +45,8 @@ describe.skipIf(!canRun)("Provision US Core 6.1.0 on R4 Core + validate", () => 
     const g = await validateCode(wh, { valueSet: "http://hl7.org/fhir/ValueSet/administrative-gender", code: "female" });
     expect(g.result).toBe(true);
   });
+
+  afterAll(() => { delete process.env.FHIRENGINE_VALIDATION_PROFILES; });
 
   it("installs US Core 6.1.0 on top (profiles resolvable)", async () => {
     expect(usResult.profiles).toBeGreaterThan(10);

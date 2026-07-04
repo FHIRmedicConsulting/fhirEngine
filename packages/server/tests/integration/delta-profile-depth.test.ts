@@ -4,7 +4,7 @@
  * live). Seeds a synthetic profile + terminology, then $validates conforming / non-conforming
  * resources. Sidecar-gated.
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { DeltaWarehouse } from "../../src/lib/delta-warehouse.js";
 import { createDeltaApp } from "../../src/app.js";
 import { loadTerminologyResources } from "../../src/terminology/terminology-loader.js";
@@ -30,6 +30,7 @@ describe.skipIf(!SIDECAR)("profile enforcement depth (nested required + profile 
   const patient = (over: Record<string, unknown>) => ({ resourceType: "Patient", meta: { profile: [PROFILE] }, ...over });
 
   beforeAll(async () => {
+    process.env.FHIRENGINE_VALIDATION_PROFILES = "declared"; // these suites assert claimed-profile enforcement (opt-in since the base-only default)
     if (!SIDECAR) return;
     if (!(await wh.health())) throw new Error("sidecar down");
     // profile: identifier(min1) + identifier.system(min1, NESTED) + gender(min1, required binding)
@@ -52,6 +53,8 @@ describe.skipIf(!SIDECAR)("profile enforcement depth (nested required + profile 
       { resourceType: "ValueSet", url: VS_GENDER, version: "1", compose: { include: [{ system: SYS, concept: [{ code: "female" }, { code: "male" }] }] } },
     ]);
   });
+
+  afterAll(() => { delete process.env.FHIRENGINE_VALIDATION_PROFILES; });
 
   it("a conforming resource passes", async () => {
     const errs = diags(await validate(patient({ identifier: [{ system: "urn:x", value: "1" }], gender: "female" })));

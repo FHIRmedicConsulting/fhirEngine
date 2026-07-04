@@ -47,7 +47,10 @@ async function profileSpec(wh: DeltaWarehouse, url: string): Promise<ProfileSpec
         const path = String(e.path ?? "");
         if (path === rtype || !path.startsWith(`${rtype}.`)) continue;
         const rel = path.slice(rtype.length + 1); // path relative to the resource (any depth)
-        if (rel.includes(":")) continue; // skip slice-qualified element ids
+        // Slice-qualified elements constrain only their slice; the qualifier lives in element
+        // *id* (`Condition.category:screening`), never in path — applying such a constraint to
+        // every node at the path false-rejects valid resources.
+        if (String(e.id ?? "").includes(":") || e.sliceName) continue;
         if ((Number(e.min) || 0) >= 1) required.add(rel);
         if (e.binding?.strength === "required" && e.binding?.valueSet) {
           requiredBindings.push({ path: rel, valueSet: String(e.binding.valueSet).split("|")[0], fhirType: e.type?.[0]?.code ?? "" });
@@ -60,6 +63,47 @@ async function profileSpec(wh: DeltaWarehouse, url: string): Promise<ProfileSpec
   }
   profileSpecCache.set(url, spec);
   return spec;
+}
+
+/** Operator profile requirement (FHIRENGINE_VALIDATION_PROFILES, comma-separated). Empty
+ * (default) → base-FHIR-only validation; `meta.profile` claims are stored, not enforced.
+ * Entries: an installed IG package id (enforce its profiles for the resource type, e.g.
+ * `hl7.fhir.us.core`), a profile canonical URL, or `declared` (enforce claimed profiles). */
+function validationProfileConfig(): string[] {
+  return (process.env.FHIRENGINE_VALIDATION_PROFILES ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+const configuredProfileCache = new Map<string, string[]>();
+
+async function configuredProfiles(wh: DeltaWarehouse, rt: string, cfg: string[]): Promise<string[]> {
+  const key = `${cfg.join(",")}|${rt}`;
+  if (configuredProfileCache.has(key)) return configuredProfileCache.get(key)!;
+  const out = new Set<string>();
+  try {
+    wh.registerConformance("structuredefinition");
+    for (const entry of cfg) {
+      if (entry === "declared") continue; // resolved per-resource by the caller
+      const rows = /^https?:\/\//.test(entry)
+        ? await wh.query<{ url: string }>(
+            "SELECT url FROM structuredefinition WHERE url = ? AND type = ? LIMIT 1",
+            [entry.split("|")[0], rt],
+          )
+        : await wh.query<{ url: string }>(
+            "SELECT url FROM structuredefinition WHERE package = ? AND type = ? AND derivation = 'constraint'",
+            [entry, rt],
+          );
+      for (const r of rows) out.add(r.url);
+    }
+  } catch { /* conformance store absent → nothing to enforce */ }
+  const list = [...out];
+  configuredProfileCache.set(key, list);
+  return list;
+}
+
+/** Drop cached profile specs/requirements (tests; after IG install). */
+export function resetValidationCaches(): void {
+  profileSpecCache.clear();
+  configuredProfileCache.clear();
 }
 
 /** Descend a dot-path (relative to the root), flattening arrays → the set of nodes at that path.
@@ -131,14 +175,26 @@ export async function validateResource(
   const issues = [...base.issues];
   if (!isR4CoreResource(rt)) return { valid: issues.length === 0, issues };
 
-  // L2–L5 profile: required elements from installed profile snapshots.
+  // L2–L5 profile: required elements from installed profile snapshots — but ONLY the
+  // profiles the OPERATOR requires (FHIRENGINE_VALIDATION_PROFILES). By default nothing is
+  // required and validation stops at the installed FHIR version: a resource merely
+  // *claiming* a profile in meta.profile is not rejected for missing that profile's
+  // constraints (real-world EHR exports routinely stamp profiles they don't fully satisfy).
   // NOTE (must-support): intentionally NOT enforced at the instance level — per FHIR,
   // must-support is a server *capability* (surfaced in CapabilityStatement), not an
   // instance-validity rule; an instance is valid even if it omits a must-support element.
   // NOTE (slicing): full discriminator-based slice validation is deferred (the hard part
   // per the IG-provisioning research) — a wrong slicer false-rejects valid resources; the
   // generated `validateSliceCardinality` helper is the future hook.
-  const profiles = ((resource.meta as any)?.profile ?? []) as string[];
+  const cfg = validationProfileConfig();
+  const profiles: string[] = [];
+  if (opts?.warehouse && cfg.length) {
+    profiles.push(...(await configuredProfiles(opts.warehouse, rt, cfg)));
+    if (cfg.includes("declared")) {
+      const declared = ((resource.meta as any)?.profile ?? []) as string[];
+      for (const u of declared) if (u && !profiles.includes(u.split("|")[0])) profiles.push(u.split("|")[0]);
+    }
+  }
   const profileBindingTasks: BindingTask[] = [];
   if (opts?.warehouse && profiles.length) {
     for (const url of profiles) {

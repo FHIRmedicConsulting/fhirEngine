@@ -7,7 +7,7 @@
  *   FHIRENGINE_DELTA_SIDECAR_URL=http://127.0.0.1:8081 FHIRENGINE_DELTA_BASE=./.delta-test \
  *     npx vitest run tests/integration/delta-profile-validation.test.ts
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { existsSync } from "node:fs";
 import { DeltaWarehouse } from "../../src/lib/delta-warehouse.js";
 import { createDeltaApp } from "../../src/app.js";
@@ -28,10 +28,13 @@ describe.skipIf(!canRun)("Profile validation (US Core enforced prior to Bronze)"
     app.fetch(new Request(`http://test${p}`, { method: m, headers: { "Content-Type": "application/fhir+json" }, body: b ? JSON.stringify(b) : undefined }));
 
   beforeAll(async () => {
+    process.env.FHIRENGINE_VALIDATION_PROFILES = "declared"; // these suites assert claimed-profile enforcement (opt-in since the base-only default)
     if (!canRun) return;
     if (!(await wh.health())) throw new Error(`sidecar not reachable at ${SIDECAR}`);
     await installIgPackage(wh, US_CORE, "hl7.fhir.us.core#6.1.0");
   });
+
+  afterAll(() => { delete process.env.FHIRENGINE_VALIDATION_PROFILES; });
 
   it("rejects a us-core-patient missing required identifier (422, not Bronze)", async () => {
     const id = `${run}-bad`;
