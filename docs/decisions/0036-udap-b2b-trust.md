@@ -32,10 +32,12 @@ Add a UDAP **foundation** (opt-in `RONIN_UDAP_ENABLED`, `RONIN_UDAP_TRUST_ANCHOR
 
 - (+) Certificate-rooted B2B trust + DCR — the on-ramp to CMS-0057 B2B / TEFCA; reuses the Backend
   Services token path. Tested against real openssl-minted CA/leaf certs.
-- (−) **Foundation, not complete SSRAA.** Deliberately deferred (**OPEN QUESTIONS / follow-ups**):
-  full RFC 5280 path validation + **CRL/OCSP revocation** + name-constraints; **tiered OAuth** (signed
-  `authorize` requests); UDAP **certifications/endorsements**; a **persistent** client registry (survives
-  restart / fleet) instead of in-memory; and community/trust-bundle management. These are required
-  before production TEFCA use and are **out of Alpha scope**.
-- Certificate revocation is the most important remaining gap — a revoked-but-unexpired cert is
-  currently accepted. Track before any real-partner deployment.
+- (+) **Revocation implemented** (operator revocation list): `RONIN_UDAP_REVOKED_CERTS` /
+  `RONIN_UDAP_REVOKED_CERTS_FILE` (cert SHA-256 fingerprints and/or serials). A revoked cert anywhere
+  in a presented chain rejects the whole chain — so a compromised partner cert can be revoked
+  immediately, without waiting for expiry. No new dependency.
+- (−) **Foundation, not complete SSRAA.** Deferred (**OPEN QUESTIONS / follow-ups**): **live CRL/OCSP**
+  fetching (the current revocation is a static operator-managed list, not automated CRL/OCSP); full
+  RFC 5280 path validation + name-constraints; **tiered OAuth** (signed `authorize` requests); UDAP
+  **certifications/endorsements**; a **persistent** client registry (survives restart / fleet) instead
+  of in-memory; and community/trust-bundle management. Required before production TEFCA use.

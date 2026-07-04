@@ -78,6 +78,25 @@ describe.skipIf(!opensslOk)("UDAP software statement + DCR", () => {
       .rejects.toBeInstanceOf(UdapError);
   });
 
+  it("rejects a REVOKED (but trusted + unexpired) certificate", async () => {
+    const leaf = new X509Certificate(Buffer.from(trusted.leafDerB64, "base64"));
+    const jwt = await softwareStatement(trusted.leafKeyPem, [trusted.leafDerB64]);
+    // sanity: accepted before revocation
+    await expect(verifySoftwareStatement(jwt, { audience: REG, anchors: [trusted.caCert] })).resolves.toBeTruthy();
+    // revoke by fingerprint → now rejected
+    process.env.RONIN_UDAP_REVOKED_CERTS = leaf.fingerprint256;
+    try {
+      await expect(verifySoftwareStatement(jwt, { audience: REG, anchors: [trusted.caCert] }))
+        .rejects.toThrow(/revoked/i);
+      // also revocable by serial number
+      process.env.RONIN_UDAP_REVOKED_CERTS = leaf.serialNumber;
+      await expect(verifySoftwareStatement(jwt, { audience: REG, anchors: [trusted.caCert] }))
+        .rejects.toThrow(/revoked/i);
+    } finally {
+      delete process.env.RONIN_UDAP_REVOKED_CERTS;
+    }
+  });
+
   it("rejects a wrong-audience software statement", async () => {
     const jwt = await softwareStatement(trusted.leafKeyPem, [trusted.leafDerB64]);
     await expect(verifySoftwareStatement(jwt, { audience: "https://evil/register", anchors: [trusted.caCert] }))

@@ -63,6 +63,8 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 |---|---|---|
 | `RONIN_UDAP_ENABLED` | off | Enable `.well-known/udap` + trusted DCR (`/udap/register`). |
 | `RONIN_UDAP_TRUST_ANCHORS` | — | Comma-separated PEM paths of trusted CA anchors. |
+| `RONIN_UDAP_REVOKED_CERTS` | — | Revoked cert SHA-256 fingerprints and/or serials (comma-separated) — rejected even if trusted + unexpired. |
+| `RONIN_UDAP_REVOKED_CERTS_FILE` | — | ...or a file of them (one per line, `#` comments). |
 
 ## Audit, consent & HTTP hardening (ADR-0030/0033/0035)
 
