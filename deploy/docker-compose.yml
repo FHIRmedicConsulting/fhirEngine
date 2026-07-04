@@ -2,11 +2,13 @@
 # Two services on one shared codebase: TS/Hono FHIR server + delta-rs/DataFusion
 # storage sidecar (single-writer). Delta lives on a local volume OR an object store.
 #
-#   Local:  docker compose up --build           (Delta on the `delta-data` volume)
-#   Cloud:  set RONIN_DELTA_BASE=s3://… + creds in .env, then up (no volume needed)
+#   Dev/demo (synthetic data):  docker compose up --build      → dev security profile
+#   Production (PHI-capable):   docker compose -f docker-compose.yml -f docker-compose.prod.yml up
 #
-# ⚠️ No auth/TLS wired yet — SYNTHETIC data only. Wire SMART/UDAP (ADR-0006) + TLS
-#    before any real PHI (see deploy/README.md).
+# The base file runs the DEV security profile (controls opt-in/off) for SYNTHETIC data only.
+# The prod overlay flips RONIN_SECURITY_PROFILE=production, which FAILS CLOSED unless auth + audit +
+# transport security are configured (ADR-0032). See deploy/README.md + the security runbook
+# (docs/standalone/security-hardening-and-deployment.md).
 name: ronin-standalone
 
 services:
@@ -43,10 +45,21 @@ services:
       PORT: "3000"
       RONIN_PUBLIC_URL: ${RONIN_PUBLIC_URL:-http://localhost:3000}
       RONIN_LOG_LEVEL: ${RONIN_LOG_LEVEL:-info}
+      # Security profile — 'dev' (default, synthetic-only) or 'production' (fail-closed, ADR-0032).
+      # The prod overlay sets this + the required controls. See deploy/.env.example for all vars.
+      RONIN_SECURITY_PROFILE: ${RONIN_SECURITY_PROFILE:-dev}
+      RONIN_AUTH_ENABLED: ${RONIN_AUTH_ENABLED:-}
+      RONIN_AUTH_STRATEGY: ${RONIN_AUTH_STRATEGY:-}
+      RONIN_AUDIT_ENABLED: ${RONIN_AUDIT_ENABLED:-}
+      RONIN_CONSENT_ENFORCEMENT: ${RONIN_CONSENT_ENFORCEMENT:-}
+      RONIN_TLS_TERMINATED_AT_PROXY: ${RONIN_TLS_TERMINATED_AT_PROXY:-}
+      RONIN_CORS_ORIGINS: ${RONIN_CORS_ORIGINS:-}
+      RONIN_RATE_LIMIT_ENABLED: ${RONIN_RATE_LIMIT_ENABLED:-}
     ports:
       - "${RONIN_PORT:-3000}:3000"
     depends_on:
-      - sidecar
+      sidecar:
+        condition: service_healthy   # don't take traffic until storage is reachable
     restart: unless-stopped
 
 volumes:

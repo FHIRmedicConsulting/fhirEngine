@@ -1,0 +1,30 @@
+# Docker build context is the repo root (deploy/Dockerfile.* use context: ..).
+# Keep the context small and free of secrets, local data, and generated output.
+**/node_modules
+.git
+.gitignore
+**/dist
+**/coverage
+**/*.log
+
+# Local Delta stores + terminology data (never bake data into an image)
+.delta*
+**/.delta*
+terminologies/
+**/*.RRF
+sct2_*
+
+# Secrets / local env (only *.env.op reference files are tracked; real .env never)
+*.env
+**/*.env
+!**/*.env.op
+!**/.env.example
+
+# Scratch + editor cruft
+scratchpad/
+**/* [0-9].*
+.DS_Store
+
+# Docs/tests aren't needed at runtime (smaller image)
+docs/
+**/tests/

@@ -43,23 +43,38 @@ Then `docker compose up --build`. (GCS: `gs://…` + `GOOGLE_SERVICE_ACCOUNT`; A
 `az://…` + `AZURE_STORAGE_ACCOUNT_*`.) Deploy the same compose on any VM / k8s / cloud
 container host.
 
-## ⚠️ Before real PHI (not in this build)
+## Production (PHI-capable) — secure by default, fails closed
 
-This deployment has **no auth and no TLS** — **synthetic data only**. Per the PHI
-posture (`phi-security-standards` memory) wire these first:
-- **TLS** termination in front (transmission security);
-- **SMART/UDAP** auth (ADR-0006) + **AuditEvent** capture (ADR-0016);
-- **encryption at rest** (object-store SSE/KMS).
+The base compose runs the **dev** security profile (controls off, SYNTHETIC data only). For a
+PHI-capable deployment, add the production overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+```
+
+This sets `RONIN_SECURITY_PROFILE=production`, which **refuses to boot** (ADR-0032) unless
+authentication + audit + transport security are configured. The security controls that ship
+(hardened TLS, HTTP hardening, tamper-evident audit, SMART/Backend-Services/UDAP auth) are real —
+you supply the deployment specifics:
+
+- **TLS** — terminate at a proxy/LB in front (default; `RONIN_TLS_TERMINATED_AT_PROXY=true`) or run
+  in-process HTTPS (`RONIN_TLS_CERT/KEY`, NIST SP 800-52r2 hardened).
+- **Auth** — point `RONIN_AUTH_STRATEGY=jwks` at your IdP's JWKS, or run our OAuth server with
+  **static** signing keys (`RONIN_OAUTH_PRIVATE_KEY/PUBLIC_KEY`).
+- **Audit + consent** — on by the overlay; verify with `scripts/ronin-audit-verify.ts`.
+- **Encryption at rest** — object-store SSE/KMS (operator/platform responsibility).
+
+Full config: `deploy/.env.example` + `docs/standalone/configuration.md`. Security detail + pre-Alpha
+checklist: `docs/standalone/security-hardening-and-deployment.md`.
 
 ## Status / limitations (honest)
 
-- **Not yet built/run in CI** — the deploy host needs a running Docker daemon; the
-  Compose file is config-validated (`docker compose config`) but images haven't been
-  built here.
-- Server runs via **tsx** (no compile step). Follow-up: compile to `dist` for a
-  leaner production image (the heritage `build` script is dbignite-coupled).
-- Storage CRUD is **Bronze-only** so far (create/read/update/delete/identifier-search);
-  Silver/Gold promotion (ADR-0026) and catalog binding (ADR-0025, path-based default)
-  are the next layers.
-- Object-store write verified by design (delta-rs native); **exercise S3/GCS/Azure on
-  a real bucket** before production.
+- **Not yet built/run in CI** — the Compose file is config-validated (`docker compose config`) but
+  images aren't built in CI here; build them on a Docker host before relying on them.
+- Server currently runs via **tsx** (no compile step) — a follow-up compiles to `dist` for a leaner
+  production image.
+- **Storage serving is single-store** (Bronze current-version); `RONIN_STORAGE_MODE=medallion`
+  Gold-read-path is not yet wired for serving. **Object-store restart-registration is local-FS only**
+  today (a restarted server on S3 sees prior data after the first write). Exercise S3/GCS/Azure on a
+  real bucket before production.
+- **`$export` async persistence** and full profile/IG (L5) validation are in progress — see STATUS.

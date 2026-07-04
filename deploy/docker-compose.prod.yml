@@ -1,0 +1,33 @@
+# Production overlay — RoninStandAlone PHI-capable deployment.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+#
+# Turns on the fail-closed production security profile (ADR-0032): the server REFUSES TO BOOT
+# unless authentication + audit + transport security are configured. This overlay sets the gate
+# flags; YOU must still supply:
+#   - a real IdP/JWKS for RONIN_AUTH_STRATEGY=jwks (RONIN_JWKS_URI / OIDC discovery), OR run our
+#     OAuth server with STATIC keys (RONIN_OAUTH_PRIVATE_KEY/PUBLIC_KEY),
+#   - TLS: either terminate at a proxy/LB in front of this service (default here), or set
+#     RONIN_TLS_CERT/KEY on the server for in-process HTTPS,
+#   - CORS origins for your real client apps.
+# See docs/standalone/security-hardening-and-deployment.md §2. Provide secrets via your orchestrator
+# / 1Password `op run` — never commit them.
+services:
+  server:
+    environment:
+      RONIN_SECURITY_PROFILE: production
+      RONIN_AUTH_ENABLED: "true"
+      RONIN_AUTH_STRATEGY: ${RONIN_AUTH_STRATEGY:-jwks}
+      RONIN_AUDIT_ENABLED: "true"
+      RONIN_CONSENT_ENFORCEMENT: ${RONIN_CONSENT_ENFORCEMENT:-true}
+      # TLS terminated at an upstream proxy/LB by default. To run in-process HTTPS instead,
+      # unset this and set RONIN_TLS_CERT/KEY (mounted PEM paths).
+      RONIN_TLS_TERMINATED_AT_PROXY: ${RONIN_TLS_TERMINATED_AT_PROXY:-true}
+      RONIN_RATE_LIMIT_ENABLED: "true"
+      RONIN_RATE_LIMIT_RPM: ${RONIN_RATE_LIMIT_RPM:-600}
+      RONIN_CORS_ORIGINS: ${RONIN_CORS_ORIGINS:-}
+      # IdP / OAuth signing keys (supply via secrets):
+      RONIN_JWKS_URI: ${RONIN_JWKS_URI:-}
+      RONIN_OAUTH_ENABLED: ${RONIN_OAUTH_ENABLED:-}
+      RONIN_OAUTH_PRIVATE_KEY: ${RONIN_OAUTH_PRIVATE_KEY:-}
+      RONIN_OAUTH_PUBLIC_KEY: ${RONIN_OAUTH_PUBLIC_KEY:-}
