@@ -57,7 +57,7 @@ pass the required tests"); **no bypass flag exists**. Our tx endpoint is for our
 cert validator — Option B is the correct path (and is what ONC's hosted validator does). Kept the
 `TerminologyCapabilities` endpoint (standards-compliant improvement). Prior Run 8:
 zero `fhir_client` crashes, Patient 10 PASS, clinical search/read/revinclude clean. Detail:
-`docs/standalone/inferno-g10-findings.md` §Run 9; drivers: `docs/standalone/inferno/`.
+`docs/standalone/inferno-g10-findings.md` §Run 9.
 
 ## Priorities (from the deep-dive)
 Done: ✅#1 OPTIMIZE/VACUUM ✅#2 current-version ✅#2a Z-order ✅#3 concurrency ✅#4 Inferno started

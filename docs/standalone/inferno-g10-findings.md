@@ -10,8 +10,12 @@ Status: **harness operational; first conformance slice run.** Local-first per AD
 - **Server under test:** fhirEngine booted end-to-end (Python delta sidecar + TS/Hono server)
   against a copy of the provisioned store (`.delta-prov` → US Core 6.1.0 profiles + terminology).
   Reachable from Inferno at `http://host.docker.internal:3000`.
-- **Driver:** `scratchpad/inferno/run.py` drives the Inferno JSON API headlessly
-  (create session → run group → poll → results). Auth-mode inputs need `type: "auth_info"`.
+- **Driver:** a small session-local Python script drove the Inferno JSON API headlessly
+  (create session → run group → poll → results; not kept in-repo — Inferno is ONC's test kit,
+  cloned and run separately). Auth-mode inputs need `type: "auth_info"`.
+- **Re-run prereq (memory):** the kit's `hl7_validator_service` OOM-kills (exit 137) unless its
+  `docker-compose.background.yml` sets `SESSION_CACHE_DURATION: 10` (was `-1`, never expire) and
+  `JAVA_TOOL_OPTIONS: "-Xmx5g"` (container default is ~1.9 GB).
 
 ## What this session added to the server (SMART discovery + auth gate slice)
 
@@ -343,7 +347,7 @@ terminology endpoint; **B** — the ONC-aligned approach of not using a live ext
 
 ### Structural gotchas discovered (these cost most of the effort — document them)
 
-1. **Two suites, two validator configs.** The headless driver (`inferno/batch.py`) runs the
+1. **Two suites, two validator configs.** The headless batch driver ran the
    **standalone `us_core_v610` suite** (from the `us_core_test_kit` gem), NOT the G10 suite. Each has
    its **own** `fhir_resource_validator` block. The US Core suite validates against **tx.fhir.org by
    default** and its `exclude_message` uses only `VALIDATION_MESSAGE_FILTERS`; the G10 suite uses
