@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 
 const R4_PKG =
   process.env.R4_CORE ??
-  "/Users/chad/.fhir/packages/hl7.fhir.r4.core#4.0.1/package";
+  `${process.env.HOME}/.fhir/packages/hl7.fhir.r4.core#4.0.1/package`;
 
 const MAX_DEPTH = 3;
 const ALWAYS_STRINGIFY = new Set(["Resource", "Extension", "Narrative"]);

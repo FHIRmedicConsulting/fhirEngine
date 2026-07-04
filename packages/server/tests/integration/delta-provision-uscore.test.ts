@@ -14,8 +14,8 @@ import { validateCode } from "../../src/terminology/validate-code.js";
 
 const SIDECAR = process.env.FHIRENGINE_DELTA_SIDECAR_URL;
 const BASE = process.env.FHIRENGINE_DELTA_BASE ?? "./.delta-test";
-const R4 = process.env.R4_CORE ?? "/Users/chad/.fhir/packages/hl7.fhir.r4.core#4.0.1/package";
-const US_CORE = process.env.US_CORE_PKG ?? "/Users/chad/.fhir/packages/hl7.fhir.us.core#6.1.0/package";
+const R4 = process.env.R4_CORE ?? `${process.env.HOME}/.fhir/packages/hl7.fhir.r4.core#4.0.1/package`;
+const US_CORE = process.env.US_CORE_PKG ?? `${process.env.HOME}/.fhir/packages/hl7.fhir.us.core#6.1.0/package`;
 const US_CORE_PATIENT = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient";
 const canRun = !!SIDECAR && existsSync(R4) && existsSync(US_CORE);
 

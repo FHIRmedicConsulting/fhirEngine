@@ -12,7 +12,7 @@ import { installIgPackage, listInstalledProfiles, isProfileInstalled } from "../
 
 const SIDECAR = process.env.FHIRENGINE_DELTA_SIDECAR_URL;
 const BASE = process.env.FHIRENGINE_DELTA_BASE ?? "./.delta-test";
-const US_CORE = process.env.US_CORE_PKG ?? "/Users/chad/.fhir/packages/hl7.fhir.us.core#6.1.0/package";
+const US_CORE = process.env.US_CORE_PKG ?? `${process.env.HOME}/.fhir/packages/hl7.fhir.us.core#6.1.0/package`;
 const US_CORE_PATIENT = "http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient";
 
 const canRun = !!SIDECAR && existsSync(US_CORE);

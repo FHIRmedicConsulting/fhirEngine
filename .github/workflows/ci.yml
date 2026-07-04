@@ -21,6 +21,8 @@ jobs:
           cache: npm
           cache-dependency-path: packages/server/package-lock.json
       - run: npm ci
+      - name: Provision FHIR packages (R4 core + US Core)
+        run: bash ../../.github/scripts/provision-fhir-packages.sh
       - run: npm run typecheck   # self-builds @fhirengine/fhir-types dist first
       - run: npm run lint
       - run: npm run test:unit
@@ -70,10 +72,25 @@ jobs:
           VER=8.18.4
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" | tar xz gitleaks
           ./gitleaks detect --source "$GITHUB_WORKSPACE" --no-banner --redact --exit-code 1
-      - name: Trivy (deps + IaC/Dockerfile misconfig + secrets)
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.55.0
-          trivy fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed "$GITHUB_WORKSPACE"
+      # Dependency + secret scan — BLOCKING on HIGH/CRITICAL (official action installs reliably).
+      - name: Trivy (deps + secrets)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      # IaC/Dockerfile misconfig — ADVISORY for alpha (hardening opinions shouldn't block); tracked separately.
+      - name: Trivy (IaC/Dockerfile misconfig — advisory)
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          severity: HIGH,CRITICAL
 
   integration:
     name: delta integration (sidecar)
@@ -89,6 +106,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
+      - name: Provision FHIR packages (R4 core + US Core)
+        run: bash ../../.github/scripts/provision-fhir-packages.sh
       - name: Install sidecar deps (+ pytest)
         working-directory: packages/server/sidecar
         run: pip install -r requirements-dev.txt

@@ -14,7 +14,7 @@ import { validateCode } from "../../src/terminology/validate-code.js";
 
 const SIDECAR = process.env.FHIRENGINE_DELTA_SIDECAR_URL;
 const BASE = process.env.FHIRENGINE_DELTA_BASE ?? "./.delta-test";
-const R4 = process.env.R4_CORE ?? "/Users/chad/.fhir/packages/hl7.fhir.r4.core#4.0.1/package";
+const R4 = process.env.R4_CORE ?? `${process.env.HOME}/.fhir/packages/hl7.fhir.r4.core#4.0.1/package`;
 
 const CS_URL = "http://hl7.org/fhir/administrative-gender";
 const VS_URL = "http://hl7.org/fhir/ValueSet/administrative-gender";

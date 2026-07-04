@@ -7,7 +7,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { extractSlicings, validateSlices } from "../../src/validation/slice-validator.js";
 
 const SD = process.env.US_CORE_RR ??
-  "/Users/chad/.fhir/packages/hl7.fhir.us.core#6.1.0/package/StructureDefinition-us-core-respiratory-rate.json";
+  `${process.env.HOME}/.fhir/packages/hl7.fhir.us.core#6.1.0/package/StructureDefinition-us-core-respiratory-rate.json`;
 const VS_CAT_SYS = "http://terminology.hl7.org/CodeSystem/observation-category";
 
 describe.skipIf(!existsSync(SD))("slice-validator (US Core VSCat)", () => {

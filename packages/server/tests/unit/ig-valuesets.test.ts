@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync } from "node:fs";
 import { collectBoundValueSets } from "../../src/terminology/ig-valuesets.js";
 
-const US = process.env.US_CORE_DIR ?? "/Users/chad/.fhir/packages/hl7.fhir.us.core#6.1.0/package";
+const US = process.env.US_CORE_DIR ?? `${process.env.HOME}/.fhir/packages/hl7.fhir.us.core#6.1.0/package`;
 
 describe.skipIf(!existsSync(US))("collectBoundValueSets (US Core)", () => {
   const bound = collectBoundValueSets(US);
