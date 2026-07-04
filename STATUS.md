@@ -6,9 +6,13 @@ _Living snapshot of where the project is. Point-in-time narrative + resume runbo
 **Product:** open-source (Apache-2.0), no-Databricks FHIR R4 server on OSS Delta Lake
 (delta-rs / DataFusion via a Python sidecar; TypeScript/Hono REST tier). Local-first.
 
-**Health:** **143 delta + 120 unit tests green · typecheck + lint clean · CI wired** · git working tree clean.
-All 10 deep-review priorities (2026-07-02) are addressed — see `docs/status/2026-07-02-deep-review.md`
-(§next actions there are now done) and the session log.
+**Health:** **149 delta + 155 unit + 8 sidecar (pytest) green · typecheck + lint clean · CI hardened**
+(unit · supply-chain audit/SBOM/pip-audit · gitleaks+Trivy scan · integration w/ fail-hard sidecar +
+boot smoke · release workflow) · git working tree clean. Both deep reviews addressed:
+`docs/status/2026-07-02-deep-review.md` and the **OSS-alpha review** `docs/status/2026-07-04-oss-alpha-review.md`
+(all 10 items done — deploy secure-by-default, honest claims, SECURITY.md/CONTRIBUTING/CoC, config
+reference, unsupported-search rejection, ADR-0023 ratified + NOTICE, graceful shutdown + `/ready`,
+sidecar tests).
 
 ---
 

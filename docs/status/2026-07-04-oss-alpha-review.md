@@ -1,5 +1,13 @@
 # RoninStandAlone — Open-Source Alpha Review (2026-07-04)
 
+> **Status 2026-07-04: all ten addressed.** #1 secure-by-default deploy + cruft removed · #2 honest
+> claims (+ L4 R4-model-aware) · #3 SECURITY.md · #4 config reference · #5 unsupported-search rejected
+> (not silently broadened) · #6 ADR-0023 ratified + NOTICE + governance reconciled · #7 graceful
+> shutdown + `/ready` · #8 sidecar pytest · #9 CI trustworthy (de-flaked, fail-hard, boot smoke) ·
+> #10 contributor on-ramp. Deferred (documented): the coverage *gate* (needs `@vitest/coverage-v8` +
+> merged unit/integration coverage). Detail below is the original review.
+
+
 Deep review (4 parallel dimensions: OSS readiness · deployment/operability · FHIR completeness/
 conformance · testing/CI/debt) to scope the **next top-ten for an open-source alpha release**.
 
