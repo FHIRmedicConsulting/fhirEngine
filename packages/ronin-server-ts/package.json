@@ -28,10 +28,12 @@
   "dependencies": {
     "@hono/node-server": "^1.13.0",
     "@ronin/fhir-types": "file:../ronin-fhir-types",
+    "asn1js": "^3.0.10",
     "fhirpath": "^4.11.0",
     "hono": "^4.6.0",
     "jose": "^6.2.3",
     "pino": "^9.5.0",
+    "pkijs": "^3.4.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

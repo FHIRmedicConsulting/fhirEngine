@@ -7,7 +7,8 @@
  */
 import { jwtVerify, decodeProtectedHeader, exportJWK, calculateJwkThumbprint } from "jose";
 import type { X509Certificate } from "node:crypto";
-import { verifyCertChain, loadTrustAnchors, leafPublicKey } from "./trust.js";
+import { verifyCertChain, loadTrustAnchors, leafPublicKey, parseX5c } from "./trust.js";
+import { CrlRevocationChecker, crlCheckEnabled } from "./crl.js";
 
 export class UdapError extends Error {}
 
@@ -28,6 +29,8 @@ export interface VerifyOptions {
   audience: string;
   anchors?: X509Certificate[];
   now?: Date;
+  /** Injectable live-CRL checker (tests); defaults to a real one when RONIN_UDAP_CRL_CHECK=true. */
+  crlChecker?: CrlRevocationChecker;
 }
 
 export async function verifySoftwareStatement(jwt: string, opts: VerifyOptions): Promise<SoftwareStatement> {
@@ -40,6 +43,17 @@ export async function verifySoftwareStatement(jwt: string, opts: VerifyOptions):
 
   const chain = verifyCertChain(x5c, anchors, opts.now);
   if (!chain.ok || !chain.leaf) throw new UdapError(`untrusted certificate: ${chain.reason}`);
+
+  // Live CRL revocation (opt-in, async) — checks each cert against its CRL, verified vs a trusted issuer.
+  if (opts.crlChecker || crlCheckEnabled()) {
+    const certs = parseX5c(x5c);
+    const issuers = [...certs, ...anchors];
+    const checker = opts.crlChecker ?? new CrlRevocationChecker();
+    for (const cert of certs) {
+      const r = await checker.isRevoked(cert, issuers);
+      if (r.revoked) throw new UdapError(`untrusted certificate: ${r.reason}`);
+    }
+  }
 
   const leafKey = leafPublicKey(chain.leaf);
   let payload: Record<string, unknown>;

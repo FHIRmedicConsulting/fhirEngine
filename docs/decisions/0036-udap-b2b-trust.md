@@ -43,11 +43,10 @@ Add a UDAP **foundation** (opt-in `RONIN_UDAP_ENABLED`, `RONIN_UDAP_TRUST_ANCHOR
   accepts a signed **request object (RFC 9101 JAR)** verified against the client's registered key, so the
   authorization request is provably from the client.
 - (−) **Not complete SSRAA yet.** Deferred (**OPEN QUESTIONS / follow-ups**):
-  - **Live CRL/OCSP fetching** — needs a **new dependency decision** (flag per the component-disclosure
-    policy): Node's `crypto` has no CRL/OCSP support. Recommended path: **`pkijs` + `asn1js`** (pure-JS,
-    no native build) to download the cert's CRL Distribution Point, parse it, and check the serial —
-    CRL first (simpler; no request signing), OCSP (AIA responder) as a follow-up. Both plug into the
-    existing revocation seam (`loadRevokedCerts`/`verifyCertChain`). **Meanwhile the static operator
-    revocation list is a real revocation control.** Requires Chad's approval of the PKI dep before build.
+  - ~~Live CRL fetching~~ **DONE** (2026-07-04; `pkijs`+`asn1js` approved): `src/auth/udap/crl.ts` —
+    downloads the cert's CRL Distribution Point (or `RONIN_UDAP_CRL_URLS`), **verifies the CRL is signed
+    by a trusted issuer** (so a forged/empty CRL can't hide a revocation), checks the serial, and caches
+    per `nextUpdate`. Opt-in `RONIN_UDAP_CRL_CHECK`; soft-fail by default, `RONIN_UDAP_CRL_HARD_FAIL` to
+    fail closed. Enforced in `verifySoftwareStatement`. **OCSP** (AIA responder) remains a follow-up.
   - Full RFC 5280 path validation + name-constraints; UDAP **certifications/endorsements**; and
     community/trust-bundle management. Required before production TEFCA use.

@@ -16,9 +16,12 @@ Status legend: ✅ approved (explicit Chad decision or ratified ADR) · ⚠️ n
 > **`@databricks/sql` is removed** (0 refs in src + lockfile); the **heritage `src/auth/` module is
 > ratified by ADR-0030**. New security deps added since (all **Node/Hono built-ins + existing `jose`**,
 > **no new runtime dependency**) are covered by ADR-0031..0036. Rows below updated accordingly.
+> **New runtime deps (approved by Chad 2026-07-04):** `pkijs` + `asn1js` — pure-JS PKI for **live CRL
+> revocation** (ADR-0036): download + signature-verify a certificate's CRL. No native build; `npm audit`
+> clean.
 > **Optional, operator-installed (NOT in the dependency tree):** `ioredis` — lazy-imported only when
 > `RONIN_RATE_LIMIT_STORE=redis` for shared multi-node rate limiting (ADR-0033); single-node never loads
-> it. `@vitest/coverage-v8` — dev-only (coverage gate). Both disclosed here.
+> it. `@vitest/coverage-v8` — dev-only (coverage gate). All disclosed here.
 
 ## Production server — `packages/ronin-server-ts`
 
