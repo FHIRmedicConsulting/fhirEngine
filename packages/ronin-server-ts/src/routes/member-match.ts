@@ -19,6 +19,7 @@ import { DeltaResourceRepository } from "../repository/delta-resource-repository
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import type { SearchCondition } from "../repository/delta-resource-repository.js";
 import type { Resource as FhirResource } from "@ronin/fhir-types";
+import { p2pConsentRequired, payerToPayerPermitted } from "../auth/cms0057-consent.js";
 
 interface Identifier { system?: string; value?: string }
 interface MemberPatient { resourceType: string; identifier?: Identifier[]; name?: Array<{ family?: string }>; birthDate?: string; gender?: string }
@@ -90,6 +91,15 @@ export function mountMemberMatch(app: Hono, wh: DeltaWarehouse): void {
         ? "multiple candidate members matched — a single unique match is required"
         : "no member matched the supplied demographics/coverage";
       return c.json(oo("processing", msg), 422 as ContentfulStatusCode);
+    }
+
+    // Payer-to-Payer is OPT-IN (CMS-0057): once uniquely matched, the member must have consented to
+    // payer-to-payer exchange before we disclose their identifier for the downstream clinical pull.
+    if (p2pConsentRequired()) {
+      const pid = (matched as { id?: string }).id;
+      if (!pid || !(await payerToPayerPermitted(wh, pid))) {
+        return c.json(oo("suppressed", "member has not consented to payer-to-payer data exchange (opt-in required)"), 403 as ContentfulStatusCode);
+      }
     }
 
     return c.json({

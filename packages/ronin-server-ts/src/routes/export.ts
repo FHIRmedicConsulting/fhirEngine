@@ -21,6 +21,7 @@ import {
   createExportJob, readManifest, appendNdjson, recordOutput, finishJob, openTypeFile, deleteExportJob,
 } from "../lib/export-jobs.js";
 import type { Resource as FhirResource } from "@ronin/fhir-types";
+import { providerAccessOptOutEnabled, filterProviderOptOut } from "../auth/cms0057-consent.js";
 
 const PAGE = 1000;
 
@@ -92,6 +93,9 @@ export function mountExport(app: Hono, wh: DeltaWarehouse, baseUrl: string): voi
         .map((m: any) => m?.entity?.reference)
         .filter((r: unknown): r is string => typeof r === "string" && r.startsWith("Patient/"))
         .map((r: string) => r.slice("Patient/".length));
+      // Provider Access is OPT-OUT (CMS-0057): a Group/$export scoped to attributed patients must
+      // exclude any patient who has opted out. Off by default; production enablement is a deploy gate.
+      if (providerAccessOptOutEnabled()) patientIds = await filterProviderOptOut(wh, patientIds ?? []);
     }
     const jobId = await createExportJob(new URL(c.req.url).pathname + (c.req.url.includes("?") ? `?${c.req.url.split("?")[1]}` : ""), new Date().toISOString(), false);
     void runExport(jobId, { scope, typeFilter, since, patientIds }); // background
