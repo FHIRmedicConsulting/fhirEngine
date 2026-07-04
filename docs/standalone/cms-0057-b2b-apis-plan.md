@@ -69,8 +69,11 @@ the **authorization semantics** (attribution, opt-out/opt-in consent) specific t
 ## Recommended sequence (smallest-valuable-first)
 
 1. Install Da Vinci IGs (PDex/HRex first) — unblocks profiles + value sets. *(small)*
-2. **`Patient/$member-match`** (HRex) + opt-in consent — the bounded Payer-to-Payer core, testable
-   against Synthea. *(medium — good first build)*
+2. ✅ **`Patient/$member-match`** (HRex) — **DONE** (2026-07-04): `src/routes/member-match.ts` matches a
+   submitted member to a single local Patient by identifier / `Coverage.subscriberId` / demographics
+   (family+birthDate+gender); unique match required (422 on none/multiple); advertised in the
+   CapabilityStatement. First slice — probabilistic/MPI matching + a consent gate on the match itself
+   are follow-ups (consent on the subsequent clinical pull is already enforced, ADR-0030).
 3. Provider Access attribution Group + opt-out consent + scoped `$export`. *(medium)*
 4. Patient Access PDex/EOB surface. *(small–medium)*
 5. Prior Auth (PAS → CRD → DTR) — its own epic; likely a dedicated ADR for CDS Hooks + CQL. *(large)*

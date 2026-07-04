@@ -51,6 +51,7 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
     if (rt === "Patient") ops.push(
       { name: "everything", definition: "http://hl7.org/fhir/OperationDefinition/Patient-everything" },
       { name: "export", definition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/patient-export" },
+      { name: "member-match", definition: "http://hl7.org/fhir/us/davinci-hrex/OperationDefinition/member-match" },
     );
     if (rt === "Group") ops.push({ name: "export", definition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/group-export" });
     if (TERMINOLOGY_OPS[rt]) ops.push(...TERMINOLOGY_OPS[rt]);
