@@ -1,5 +1,7 @@
 # fhirEngine — self / cloud-hosted deployment
 
+> New here? **[QUICKSTART.md](QUICKSTART.md)** is the copy-paste path (Docker only, ~2 minutes).
+
 The non-Databricks deployment mode (ADR-0028): the **TS/Hono FHIR server** + the
 **delta-rs / DataFusion storage sidecar** (ADR-0029, ADR-0022 A1), with Delta on a
 **local volume** or any **object store** (S3 / GCS / Azure / MinIO / R2). No

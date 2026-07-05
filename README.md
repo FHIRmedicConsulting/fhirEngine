@@ -83,6 +83,9 @@ Provisioning CLI: `scripts/fhirengine-terminology.ts` (`install-ig`, `load-termi
 
 ## Deploy (Docker)
 
+**→ Copy-paste path: [deploy/QUICKSTART.md](deploy/QUICKSTART.md)** — zero to a running
+FHIR server with Docker only (no Node/Python toolchain).
+
 Two containers — the TS/Hono server and the delta-rs storage sidecar — with Delta on a
 local volume or any object store (S3 / GCS / Azure / MinIO / R2).
 
