@@ -1,6 +1,6 @@
 {
   "name": "@fhirengine/fhir-types",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "description": "FHIR types + profile classes generated via @atomic-ehr/codegen — v1 catalog: R4 core, US Core 6.1/9.0, CARIN BB 2.2.0, PDex 2.2.0, HRex 1.1.0, C4DIC 1.1.0, PAS 2.1.0.",
   "type": "module",
   "main": "./dist/index.js",
