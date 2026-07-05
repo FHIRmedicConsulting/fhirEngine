@@ -6,6 +6,8 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-07-04
+
 ### Security
 - **JWT algorithm allow-lists pinned at verify time** on all four verification sites
   (JWKS/OIDC gate, `local` strategy, RFC 9101 signed request objects, Backend-Services
@@ -146,6 +148,7 @@ All notable changes to fhirEngine are documented here. Format based on
   components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). CARIN
   BB / PDex **profile conformance** (validating against those profiles) still requires IG install (L5).
 
-[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.2...main
+[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.3...main
+[0.1.0-alpha.3]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/FHIRmedicConsulting/fhirEngine/releases/tag/v0.1.0-alpha.1
