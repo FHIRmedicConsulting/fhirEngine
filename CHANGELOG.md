@@ -6,6 +6,8 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.4] - 2026-07-05
+
 ### Security (deep-audit hardening, 2026-07-05)
 Findings from a full code-quality + vulnerability audit (4 specialist review passes + adversarial
 verification). Access-control fixes apply when auth is enabled (the PHI posture):
@@ -26,6 +28,16 @@ verification). Access-control fixes apply when auth is enabled (the PHI posture)
   object-store-exfil rejection on caller-supplied table paths; a request-body size cap; and merge
   `key` identifier validation.
 
+Audit-backlog batch (2026-07-05):
+- **id-tokens rejected on the resource API** — a scopeless token (an OIDC id_token carries no
+  scope and targets the client, not this server) now 401s before it can act as an access token.
+- **Purpose-of-Use is sourced from a verified token claim**, never the client `X-Purpose-Of-Use`
+  header, which could otherwise unlock consent-gated data.
+- **`_include`/`_revinclude` entries and `_history` bodies are consent-gated/obligation-redacted** —
+  includes are fetched by direct read and previously bypassed the compartment + consent filters.
+- **SSRF guard on UDAP CRL/OCSP fetches** — cert-supplied CDP/AIA URLs can no longer target
+  loopback/RFC1918/link-local/cloud-metadata addresses.
+
 ### Fixed (correctness, from the audit)
 - **MPI reference rewrite corrupted unrelated patients.** `Patient/<merged>` rewriting used raw
   substring replace, so merging `Patient/123` also rewrote `Patient/1234` (a different patient) and
@@ -37,6 +49,17 @@ verification). Access-control fixes apply when auth is enabled (the PHI posture)
 - **Token comma-OR ignored** — `status=active,completed` matched nothing; now an `IN(...)` OR.
 - **MPI survivor chains were iteration-order-dependent** — `loadSurvivorMap` now path-compresses
   A→B→C to the terminal survivor.
+- **Cross-process write-version conflict is detected, not silently dropped** — two server instances
+  computing the same next version off a stale read now surface a conflict (guarded MERGE +
+  insert-count check) instead of one write vanishing.
+- **Conditional create (If-None-Exist) is atomic** — the match-check + create run in one per-table
+  critical section, so concurrent conditional creates can't both insert a duplicate identifier.
+
+### Changed / removed
+- Dropped the dead `InMemoryWarehouse` (~440 lines) and the sidecar's unused validation apparatus,
+  removing the heavy `fhir.resources` (pydantic) dependency from the sidecar image.
+- Shared `logSwallowed` helper surfaces previously-invisible swallowed faults; duplicated
+  `OperationOutcome` builders consolidated into `lib/errors.operationOutcome`.
 
 ## [0.1.0-alpha.3] - 2026-07-04
 
@@ -180,7 +203,8 @@ verification). Access-control fixes apply when auth is enabled (the PHI posture)
   components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). CARIN
   BB / PDex **profile conformance** (validating against those profiles) still requires IG install (L5).
 
-[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.3...main
+[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.4...main
+[0.1.0-alpha.4]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/FHIRmedicConsulting/fhirEngine/releases/tag/v0.1.0-alpha.1

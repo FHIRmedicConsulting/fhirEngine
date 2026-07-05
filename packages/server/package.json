@@ -1,6 +1,6 @@
 {
   "name": "@fhirengine/server",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "fhirEngine — open-source FHIR R4 REST server (TypeScript / Hono) on OSS Delta Lake (delta-rs / DataFusion). No Databricks.",
   "license": "Apache-2.0",
   "type": "module",

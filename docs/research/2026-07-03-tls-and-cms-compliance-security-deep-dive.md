@@ -24,9 +24,18 @@ _Author: research/architecture pass · Date: 2026-07-03 · Applies to: **fhirEng
 > | — | D3 injection defense | ✅ parameterized SQL + whitelisted range operators; regression `delta-search-injection.test.ts` (2026-07-05) |
 > | — | Medallion/MPI (out of this doc's scope) | ✅ ADR-0026 + ADR-0012 v1 implemented 2026-07-04/05 |
 >
+> **Deep-audit follow-up (2026-07-05):** a full code-quality + vulnerability audit (4 review
+> passes) hardened the remaining access-control surface — `$export`/`_history` scope gating +
+> fail-closed `buildDataFilter`, cross-compartment write guard, export path-traversal
+> validation, id-token/scopeless rejection, token-sourced Purpose-of-Use, consent-gated
+> `_include`/history, SSRF guard on CRL/OCSP, and sidecar hardening (shared-secret token +
+> path confinement). Correctness: MPI reference-rewrite corruption, POST-id invariant,
+> cross-process write-version conflict detection, atomic conditional create.
+>
 > Remaining **OPEN**: full Inferno (g)(10) + Bulk Data suites end-to-end, L5 profile
-> validation, EHR-launch context exchange (A1), and the OPER items (FIPS platform,
-> at-rest encryption, key custody) documented in the compliance posture doc.
+> validation, EHR-launch context exchange (A1), default-on JWT audience enforcement (opt-in
+> today via `FHIRENGINE_JWT_AUDIENCE`), DNS-rebinding IP-pinning on CRL/OCSP, and the OPER
+> items (FIPS platform, at-rest encryption, key custody) in the compliance posture doc.
 
 > **Scope note.** This is a *gap analysis of the server software* against the regulatory
 > stack that governs a CMS-facing / ONC-certified FHIR R4 server. It grounds every control
