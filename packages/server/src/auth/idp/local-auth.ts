@@ -5,7 +5,7 @@
  * (For an external IdP, use the `jwks` strategy with FHIRENGINE_JWKS_URI instead.)
  */
 import { jwtVerify } from "jose";
-import { verifyKey } from "../oauth/keys.js";
+import { verifyKey, OAUTH_ALG } from "../oauth/keys.js";
 import type { AuthStrategy, IntrospectionResult } from "./types.js";
 
 export class LocalAuthStrategy implements AuthStrategy {
@@ -13,7 +13,8 @@ export class LocalAuthStrategy implements AuthStrategy {
 
   async introspect(token: string): Promise<IntrospectionResult> {
     try {
-      const { payload: p } = await jwtVerify(token, await verifyKey());
+      // Pin to OUR signing alg — this strategy only ever verifies tokens this server issued.
+      const { payload: p } = await jwtVerify(token, await verifyKey(), { algorithms: [OAUTH_ALG] });
       const scopeClaim = (p as Record<string, unknown>).scope ?? (p as Record<string, unknown>).scp;
       const scope = Array.isArray(scopeClaim) ? scopeClaim.join(" ") : typeof scopeClaim === "string" ? scopeClaim : "";
       return {

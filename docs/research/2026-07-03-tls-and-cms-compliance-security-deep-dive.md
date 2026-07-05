@@ -2,6 +2,32 @@
 
 _Author: research/architecture pass · Date: 2026-07-03 · Applies to: **fhirEngine** (OSS-Delta FHIR R4 server, TS/Hono + Python delta-rs/DataFusion sidecar)_
 
+> ## Implementation status (addendum, 2026-07-04/05)
+>
+> This analysis drove ADR-0031..0036 and subsequent patches. Roadmap (§7) status:
+>
+> | § | Item | Status |
+> |---|---|---|
+> | 1 | TLS hardening (T1/T2/T4/T5) | ✅ **ADR-0031** — TLS 1.2 floor, SP 800-52r2 cipher allow-list, HSTS, cert hot-reload |
+> | 2 | Production fail-closed gate | ✅ **ADR-0032** — `FHIRENGINE_SECURITY_PROFILE=production` refuses to boot unless auth+audit+TLS configured |
+> | 3 | Backend Services | ✅ implemented; Inferno end-to-end validation still **OPEN** |
+> | 4 | HTTP hardening (X1/X2/X3) | ✅ **ADR-0033** — headers, enforced CORS, pluggable rate limiting, body caps. X5: no access-log middleware exists (bodies/params never logged) |
+> | 5 | Conditional references (D1) | ✅ transactions resolve `Type?identifier=…` + `ifNoneExist` |
+> | 6 | Bulk `$export` conformance (D2) | partial — async disk-backed `$export` shipped; Inferno Bulk suite **OPEN** |
+> | 7 | Tamper evidence (B3/B4) | ✅ **ADR-0035** — hash-chained audit + signed external anchoring + `fhirengine-audit-verify` |
+> | 8 | SBOM / dep-scan gate (X4) | ✅ **ADR-0034** — CycloneDX SBOM, npm-audit, pip-audit, gitleaks, Trivy in CI |
+> | 9 | Da Vinci IGs + L5 (D4) | partial — PAS/CRD/DTR/HRex/EOB first slices shipped (see CHANGELOG); **L5 validation OPEN** |
+> | 10 | UDAP/SSRAA (A3) | ✅ **ADR-0036** — X.509 trust, DCR, CRL/OCSP revocation, signed_metadata, tiered OAuth |
+> | 11 | Port compliance docs | ✅ `docs/compliance/security-posture.md` (OSS-worded, 2026-07-05) |
+> | — | A5 alg pinning at verify | ✅ 2026-07-05 patch — `algorithms` allow-list on all four `jwtVerify` sites (`FHIRENGINE_JWT_ALG` pins one) |
+> | — | A4 refresh rotation | ✅ verified — refresh tokens are consumed on use (`takeRefresh` deletes) |
+> | — | D3 injection defense | ✅ parameterized SQL + whitelisted range operators; regression `delta-search-injection.test.ts` (2026-07-05) |
+> | — | Medallion/MPI (out of this doc's scope) | ✅ ADR-0026 + ADR-0012 v1 implemented 2026-07-04/05 |
+>
+> Remaining **OPEN**: full Inferno (g)(10) + Bulk Data suites end-to-end, L5 profile
+> validation, EHR-launch context exchange (A1), and the OPER items (FIPS platform,
+> at-rest encryption, key custody) documented in the compliance posture doc.
+
 > **Scope note.** This is a *gap analysis of the server software* against the regulatory
 > stack that governs a CMS-facing / ONC-certified FHIR R4 server. It grounds every control
 > in what fhirEngine already has (citing the ADR / file) and states the gap +

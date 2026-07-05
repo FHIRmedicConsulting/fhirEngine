@@ -53,7 +53,8 @@ export function oauthRoutes(baseUrl: string): Hono {
         return c.json({ error: "invalid_request", error_description: "signed request requires a registered client with a key" }, 400);
       }
       try {
-        const { payload } = await jwtVerify(q.request, keySet, { audience: iss });
+        // Advertised signing algs only (token_endpoint_auth_signing_alg_values_supported).
+        const { payload } = await jwtVerify(q.request, keySet, { audience: iss, algorithms: ["RS256", "ES384"] });
         if (payload.iss && payload.iss !== q.client_id) {
           return c.json({ error: "invalid_request", error_description: "request iss must equal client_id" }, 400);
         }
@@ -155,7 +156,8 @@ export function oauthRoutes(baseUrl: string): Hono {
       const keySet = bsClient ? clientKeySet(bsClient) : null;
       if (!bsClient || !keySet) return err("invalid_client", "unknown client or no registered key", 401);
       try {
-        const { payload } = await jwtVerify(assertion, keySet, { audience: `${baseUrl}/oauth/token` });
+        // Advertised signing algs only (token_endpoint_auth_signing_alg_values_supported).
+        const { payload } = await jwtVerify(assertion, keySet, { audience: `${baseUrl}/oauth/token`, algorithms: ["RS256", "ES384"] });
         if (payload.iss !== cid || payload.sub !== cid) return err("invalid_client", "assertion iss/sub must equal client_id", 401);
         if (!payload.jti || jtiReplay(String(payload.jti))) return err("invalid_client", "missing or replayed jti", 401);
       } catch { return err("invalid_client", "client_assertion verification failed", 401); }

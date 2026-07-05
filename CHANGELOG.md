@@ -6,6 +6,22 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Security
+- **JWT algorithm allow-lists pinned at verify time** on all four verification sites
+  (JWKS/OIDC gate, `local` strategy, RFC 9101 signed request objects, Backend-Services
+  client assertions) — closes deep-dive item A5. `FHIRENGINE_JWT_ALG` pins a single
+  algorithm for the gate; defaults are asymmetric-only (`ES256/ES384/RS256/PS256`; the
+  OAuth server accepts its advertised `RS256/ES384`).
+- **SQL-injection regression suite** (`delta-search-injection.test.ts`) — hostile search
+  values/param codes/range values execute as bound parameters, never as SQL (deep-dive D3).
+
+### Added
+- **`docs/compliance/security-posture.md`** — OSS-worded HIPAA §164.312 crosswalk, FIPS
+  140-3 "document-don't-claim" posture, supply-chain summary, and the honest operator/
+  organizational responsibility split (replaces the never-ported Databricks-worded
+  heritage doc; deep-dive roadmap item 11). The 2026-07-03 security deep-dive gains an
+  implementation-status addendum mapping every roadmap item to its ADR/patch.
+
 ## [0.1.0-alpha.2] - 2026-07-04
 
 ### Added

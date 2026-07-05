@@ -35,6 +35,10 @@ export class JwksAuthStrategy implements AuthStrategy {
   async introspect(token: string): Promise<IntrospectionResult> {
     try {
       const opts = {
+        // Alg allow-list pinned at VERIFY time (not just key import): rejects the none/HS*/
+        // key-confusion classes outright. FHIRENGINE_JWT_ALG pins one alg; default =
+        // asymmetric-only set (SP 800-52r2-aligned; §2.2 A5 of the security deep-dive).
+        algorithms: process.env.FHIRENGINE_JWT_ALG ? [process.env.FHIRENGINE_JWT_ALG] : ["ES256", "ES384", "RS256", "PS256"],
         ...(process.env.FHIRENGINE_JWT_ISSUER ? { issuer: process.env.FHIRENGINE_JWT_ISSUER } : {}),
         ...(process.env.FHIRENGINE_JWT_AUDIENCE ? { audience: process.env.FHIRENGINE_JWT_AUDIENCE } : {}),
       };
