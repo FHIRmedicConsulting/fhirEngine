@@ -101,3 +101,9 @@ export function gone(resourceType: string, id: string): FhirError {
     },
   ]);
 }
+
+/** Plain OperationOutcome object (not an error to throw) — for handlers that return one in the
+ * response body. Consolidates the ad-hoc `oo()` helpers that were duplicated across routes. */
+export function operationOutcome(code: string, diagnostics: string, severity: "error" | "warning" | "information" = "error"): OperationOutcome {
+  return { resourceType: "OperationOutcome", issue: [{ severity, code: code as OperationOutcome["issue"][number]["code"], diagnostics }] };
+}

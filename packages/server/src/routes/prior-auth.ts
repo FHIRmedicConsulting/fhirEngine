@@ -16,6 +16,7 @@ import { DeltaResourceRepository } from "../repository/delta-resource-repository
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import type { SearchCondition } from "../repository/delta-resource-repository.js";
 import type { Resource as FhirResource } from "@fhirengine/fhir-types";
+import { operationOutcome as oo } from "../lib/errors.js";
 import { uuidv7 } from "../lib/uuid-v7.js";
 
 interface Ref { reference?: string }
@@ -25,10 +26,6 @@ interface Bundle { resourceType: string; entry?: Array<{ resource?: Record<strin
 const firstOf = (bundle: Bundle, rt: string): Record<string, unknown> | undefined =>
   bundle.entry?.map((e) => e.resource).find((r) => r?.resourceType === rt);
 
-const oo = (code: string, diagnostics: string) => ({
-  resourceType: "OperationOutcome",
-  issue: [{ severity: "error" as const, code, diagnostics }],
-});
 
 const collection = (resources: unknown[]) => ({ resourceType: "Bundle", type: "collection", entry: resources.map((r) => ({ resource: r })) });
 

@@ -15,11 +15,11 @@
  */
 import type { Hono } from "hono";
 import { DeltaResourceRepository } from "../repository/delta-resource-repository.js";
+import { operationOutcome as oo } from "../lib/errors.js";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 
 const CQF_LIBRARY = "http://hl7.org/fhir/StructureDefinition/cqf-library";
 
-const oo = (code: string, diagnostics: string) => ({ resourceType: "OperationOutcome", issue: [{ severity: "error" as const, code, diagnostics }] });
 
 interface Params { resourceType?: string; parameter?: Array<{ name?: string; valueString?: string; valueCanonical?: string; valueUri?: string; resource?: Record<string, unknown> }> }
 interface QItem { answerValueSet?: string; item?: QItem[] }

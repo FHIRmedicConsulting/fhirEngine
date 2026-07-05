@@ -9,7 +9,7 @@
 
 import { serve } from "@hono/node-server";
 import { createServer as createHttpsServer } from "node:https";
-import pino from "pino";
+import { log } from "./lib/log.js";
 import { DeltaWarehouse } from "./lib/delta-warehouse.js";
 import { createDeltaApp } from "./app.js";
 import { startMaintenanceScheduler } from "./lib/maintenance.js";
@@ -22,7 +22,7 @@ import { loadRegisteredClients } from "./auth/udap/registered-clients.js";
 import type { RateLimitStore } from "./security/rate-limit.js";
 import { RedisRateLimitStore, type RedisEvalClient } from "./security/redis-rate-limit-store.js";
 
-const log = pino({ level: process.env.FHIRENGINE_LOG_LEVEL ?? "info" });
+
 
 /** Build a Redis-backed rate-limit store when FHIRENGINE_RATE_LIMIT_STORE=redis; else undefined
  *  (in-process store). Lazy-imports `ioredis` so it isn't a dependency for single-node deploys. */

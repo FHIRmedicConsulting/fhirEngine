@@ -20,6 +20,7 @@ import type { IdentifierIndexEntry } from "../repository/types.js";
 import type { SearchIndexEntry } from "../repository/search-index.js";
 import { PathCatalog } from "./catalog.js";
 import type { Catalog, Tier, StorageMode } from "./catalog.js";
+import { logSwallowed } from "./log.js";
 
 export interface DeltaWarehouseOptions {
   /** Sidecar base URL, e.g. http://127.0.0.1:8077 */
@@ -140,7 +141,7 @@ export class DeltaWarehouse implements Warehouse {
       try {
         tables = ((await this.post<{ tables?: Array<{ path: string; rel: string }> }>(
           "/list-tables", { base: this.base })).tables) ?? [];
-      } catch { return []; } // older sidecar / listing unavailable → lazy registration as before
+      } catch (e) { logSwallowed("registerExistingTables:list-tables", e); return []; } // older sidecar → lazy registration
       for (const t of tables) {
         const parts = t.rel.split("/");
         if (parts.length !== 2) continue; // only tier tables (bronze/silver/gold); others register on demand

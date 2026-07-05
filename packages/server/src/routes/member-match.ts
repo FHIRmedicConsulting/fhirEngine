@@ -19,6 +19,7 @@ import { DeltaResourceRepository } from "../repository/delta-resource-repository
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import type { SearchCondition } from "../repository/delta-resource-repository.js";
 import type { Resource as FhirResource } from "@fhirengine/fhir-types";
+import { operationOutcome as oo } from "../lib/errors.js";
 import { p2pConsentRequired, payerToPayerPermitted } from "../auth/cms0057-consent.js";
 
 interface Identifier { system?: string; value?: string }
@@ -30,10 +31,6 @@ const param = (params: unknown, name: string): Record<string, unknown> | undefin
   return arr.find((p) => p.name === name)?.resource;
 };
 
-const oo = (code: string, diagnostics: string) => ({
-  resourceType: "OperationOutcome",
-  issue: [{ severity: "error" as const, code, diagnostics }],
-});
 
 export function mountMemberMatch(app: Hono, wh: DeltaWarehouse): void {
   const patients = () => new DeltaResourceRepository(wh, "Patient");

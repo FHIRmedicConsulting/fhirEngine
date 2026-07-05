@@ -22,6 +22,7 @@ import { flattenResource } from "../fhir-schema/clean-room-flattener.js";
 import { schemaFor } from "../fhir-schema/r4-registry.js";
 import { resolveIdentities, rewriteReferences, type MpiResolution, type MpiPatientRow } from "./mpi.js";
 import { uuidv7 } from "../lib/uuid-v7.js";
+import { logSwallowed } from "../lib/log.js";
 
 interface BronzeRow {
   id: string;
@@ -92,7 +93,10 @@ export async function promote(wh: DeltaWarehouse, resourceType: string, opts?: P
       `SELECT id, version_id, last_updated, body_json, identifier_index, search_param_index,
               ext_json, deleted, _ingested_at, _ingest_source FROM ${bronze}`,
     );
-  } catch {
+  } catch (e) {
+    // Bronze table absent (nothing to promote) is expected → 0 rows. But a sidecar/schema
+    // fault would ALSO land here and silently "succeed" with 0 — log so it's not invisible.
+    logSwallowed(`promote:read-bronze:${resourceType}`, e);
     return { resourceType, bronzeRows: 0, currentIds: 0, gold: 0, silver: 0 };
   }
 

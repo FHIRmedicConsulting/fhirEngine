@@ -14,6 +14,7 @@ import { validateInvariants } from "./invariant-validator.js";
 import { validateCode } from "../terminology/validate-code.js";
 import { extractSlicings, validateSlices, type Slicing } from "./slice-validator.js";
 import type { Column } from "../fhir-schema/clean-room-flattener.js";
+import { logSwallowed } from "../lib/log.js";
 
 export interface ValidationResult {
   valid: boolean;
@@ -58,7 +59,10 @@ async function profileSpec(wh: DeltaWarehouse, url: string): Promise<ProfileSpec
       }
       spec = { required: [...required], requiredBindings, slicings: extractSlicings(sd.snapshot ?? { element: [] }) };
     }
-  } catch {
+  } catch (e) {
+    // A malformed installed snapshot silently disables that profile's enforcement — a real
+    // validation gap, so surface it rather than degrading invisibly to "no requirements".
+    logSwallowed(`profileSpec:${url}`, e);
     spec = { required: [], requiredBindings: [], slicings: [] };
   }
   profileSpecCache.set(url, spec);
