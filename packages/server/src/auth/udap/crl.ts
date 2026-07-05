@@ -13,6 +13,7 @@ import { X509Certificate } from "node:crypto";
 import * as asn1js from "asn1js";
 import { CertificateRevocationList, Certificate } from "pkijs";
 import "./pki-engine.js"; // sets the pkijs crypto engine (side effect)
+import { assertPublicHttpUrl } from "./ssrf-guard.js";
 
 /** A standalone ArrayBuffer copy of a byte view (avoids SharedArrayBuffer / offset issues). */
 const ab = (u8: Uint8Array): ArrayBuffer => new Uint8Array(u8).buffer as ArrayBuffer;
@@ -22,7 +23,10 @@ const serialKey = (hex: string): string => (hex.replace(/[^0-9a-fA-F]/g, "").toU
 
 export type CrlFetcher = (url: string) => Promise<Uint8Array>;
 
-const httpFetchCrl: CrlFetcher = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
+const httpFetchCrl: CrlFetcher = async (url) => {
+  await assertPublicHttpUrl(url); // SSRF guard — CDP URL comes from the (untrusted) cert
+  return new Uint8Array(await (await fetch(url)).arrayBuffer());
+};
 
 interface ParsedCrl {
   crl: CertificateRevocationList;

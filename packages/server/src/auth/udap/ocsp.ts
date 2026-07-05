@@ -10,14 +10,17 @@ import { X509Certificate } from "node:crypto";
 import * as asn1js from "asn1js";
 import { OCSPRequest, OCSPResponse, Certificate } from "pkijs";
 import "./pki-engine.js"; // sets the pkijs crypto engine (side effect)
+import { assertPublicHttpUrl } from "./ssrf-guard.js";
 
 const ab = (u8: Uint8Array): ArrayBuffer => new Uint8Array(u8).buffer as ArrayBuffer;
 const toPk = (cert: X509Certificate): Certificate => new Certificate({ schema: asn1js.fromBER(ab(cert.raw)).result });
 
 export type OcspFetcher = (url: string, requestBody: Uint8Array) => Promise<Uint8Array>;
 
-const httpFetchOcsp: OcspFetcher = async (url, body) =>
-  new Uint8Array(await (await fetch(url, { method: "POST", headers: { "Content-Type": "application/ocsp-request" }, body })).arrayBuffer());
+const httpFetchOcsp: OcspFetcher = async (url, body) => {
+  await assertPublicHttpUrl(url); // SSRF guard — AIA responder URL comes from the (untrusted) cert
+  return new Uint8Array(await (await fetch(url, { method: "POST", headers: { "Content-Type": "application/ocsp-request" }, body })).arrayBuffer());
+};
 
 /** OCSP responder URLs from the cert's AIA extension (1.3.6.1.5.5.7.1.1 / ocsp 48.1) + operator config. */
 export function ocspUrlsFor(cert: X509Certificate, env: NodeJS.ProcessEnv = process.env): string[] {
