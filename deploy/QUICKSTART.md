@@ -15,7 +15,12 @@ storage, auth, TLS, and audit, and writes `deploy/.env` for you — needs Node 2
 
 ## 2. Start the stack
 
-**Prebuilt images** (fastest — published to GHCR on every release):
+**Prebuilt images** (fastest — published to GHCR on every release). While the repo is
+private the images are too — log in once with a GitHub token that has `read:packages`:
+
+```bash
+echo $GITHUB_TOKEN | docker login ghcr.io -u <your-github-username> --password-stdin
+```
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.images.yml pull
