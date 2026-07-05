@@ -118,6 +118,13 @@ function condFor(code: string, type: string, modifier: string | undefined, v: st
   if (modifier === "missing") return { code, type: "missing", value: v === "true" ? "true" : "false", modifier: "missing" };
   switch (type) {
     case "token": {
+      // FHIR comma = OR-within-a-parameter (`status=active,completed`). Bare-code lists map to
+      // an IN(...) predicate; a single value (or system-qualified) keeps the exact-match path.
+      const parts = v.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1 && parts.every((p) => !p.includes("|"))) {
+        const base = { code, type: "token", value: parts[0]!, valueIn: parts };
+        return modifier === "not" ? { ...base, modifier: "not" } : base;
+      }
       const m = parseIdentifierToken(v); // "system|code" or bare code
       const base = m ? { code, type: "token", value: m.value, system: m.system } : { code, type: "token", value: v };
       return modifier === "not" ? { ...base, modifier: "not" } : base;
@@ -236,6 +243,17 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     if (df?.patientCompartmentId && !inCompartment(rt, resource, df.patientCompartmentId)) {
       throw notFound(rt, resource.id ?? "");
     }
+  };
+
+  /** Cross-compartment WRITE guard (reads were gated, writes were not): a patient-restricted
+   * caller may only mutate resources inside its own compartment. Rejects (404, no existence
+   * disclosure) when the target's current state — or the incoming body — is out-of-compartment. */
+  const gateWrite = async (c: any, rt: string, id: string, incoming?: FhirResource): Promise<void> => {
+    const df = dataFilterFor(c, rt, "u");
+    if (!df?.patientCompartmentId) return; // system / no-auth → repo-level rules apply
+    const current = await repo(rt).read(id).catch(() => null);
+    if (current) gateInstance(c, rt, current, "u");
+    if (incoming) gateInstance(c, rt, incoming, "u");
   };
 
   /** Resolve a conditional query (If-None-Exist / conditional PUT/DELETE) → count + first hit. */
@@ -488,6 +506,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
   app.put("/:resourceType/:id", async (c) => {
     const rt = c.req.param("resourceType");
     const resource = validate(await c.req.json().catch(() => null), rt);
+    await gateWrite(c, rt, c.req.param("id"), resource); // cross-compartment write guard
     const ifMatch = c.req.header("If-Match");
     const updated = await repo(rt).update(
       c.req.param("id"),
@@ -502,8 +521,10 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
 
   // DELETE /:resourceType/:id
   app.delete("/:resourceType/:id", async (c) => {
-    assertR4Core(c.req.param("resourceType"));
-    await repo(c.req.param("resourceType")).delete(c.req.param("id"));
+    const rt = c.req.param("resourceType");
+    assertR4Core(rt);
+    await gateWrite(c, rt, c.req.param("id")); // cross-compartment write guard
+    await repo(rt).delete(c.req.param("id"));
     return c.body(null, 204);
   });
 
@@ -516,6 +537,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     const { total, match } = await resolveConditional(rt, query);
     if (total > 1) throw preconditionFailed(`conditional update matched ${total} resources`);
     if (total === 1) {
+      await gateWrite(c, rt, match!.id!, resource); // cross-compartment write guard
       const updated = await repo(rt).update(match!.id!, { ...resource, id: match!.id }, null);
       return c.json(updated, 200, {
         ETag: `W/"${updated.meta?.versionId ?? "1"}"`,
@@ -538,7 +560,10 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     if (!query) throw badRequest(`conditional delete requires a search query (DELETE /${rt}?...)`);
     const { total, match } = await resolveConditional(rt, query);
     if (total > 1) throw preconditionFailed(`conditional delete matched ${total} resources`);
-    if (total === 1) await repo(rt).delete(match!.id!);
+    if (total === 1) {
+      await gateWrite(c, rt, match!.id!); // cross-compartment write guard
+      await repo(rt).delete(match!.id!);
+    }
     return c.body(null, 204); // 0 or 1 → 204 (no-op when none matched)
   });
 

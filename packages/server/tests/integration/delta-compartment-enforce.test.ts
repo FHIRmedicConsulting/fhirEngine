@@ -63,4 +63,33 @@ describe.skipIf(!SIDECAR)("patient-compartment enforcement (no cross-patient lea
     expect((await authGet(`/Observation/_history`)).status).toBe(403);
     expect((await authGet(`/_history`)).status).toBe(403);
   });
+
+  // --- security-audit regressions (2026-07-05) ---
+  // A WRITE-capable patient token (cruds) — the H1 scenario the scope gate alone doesn't stop.
+  const wtok = encodeStubToken({ sub: "u1", client_id: "app", scope: "patient/*.cruds", patient: P1 } as never);
+  const authReq = (p: string, method: string, body?: unknown, useTok = wtok) =>
+    appAuth.fetch(new Request(`http://test${p}`, {
+      method, headers: { Authorization: `Bearer ${useTok}`, "Content-Type": "application/fhir+json" },
+      body: body ? JSON.stringify(body) : undefined,
+    }));
+
+  it("write-capable patient token cannot WRITE another patient's resources (cross-compartment write guard)", async () => {
+    // PUT another patient → 404 (no existence disclosure), own patient → allowed.
+    expect((await authReq(`/Patient/${P2}`, "PUT", { resourceType: "Patient", id: P2, gender: "male" })).status).toBe(404);
+    expect((await authReq(`/Patient/${P1}`, "PUT", { resourceType: "Patient", id: P1, gender: "female" })).status).toBe(200);
+    // DELETE another patient's Observation → 404.
+    expect((await authReq(`/Observation/${obs2Id}`, "DELETE")).status).toBe(404);
+  });
+
+  it("bulk $export requires a system scope — a patient-context token is refused", async () => {
+    expect((await authGet(`/$export`)).status).toBe(403);        // system export
+    // patient-scoped Patient/$export is constrained to the caller (not a population dump)
+    const st = (await authGet(`/Patient/$export`)).status;
+    expect([202, 403]).toContain(st);
+  });
+
+  it("export file/status routes reject path-traversal ids (404, no fs escape)", async () => {
+    expect((await authGet(`/_export-file/..%2f..%2f..%2fetc%2fpasswd/Patient`)).status).toBe(404);
+    expect((await authReq(`/_export-status/..%2f..%2f..%2f..`, "DELETE")).status).toBe(404);
+  });
 });

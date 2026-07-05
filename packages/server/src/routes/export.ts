@@ -16,7 +16,8 @@ import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import { DeltaResourceRepository } from "../repository/delta-resource-repository.js";
 import { r4CoreResourceTypes } from "../fhir-schema/r4-registry.js";
 import { patientCompartment } from "../fhir-schema/patient-compartment.js";
-import { badRequest, notFound } from "../lib/errors.js";
+import { badRequest, notFound, forbidden } from "../lib/errors.js";
+import { buildDataFilter } from "../auth/data-filter.js";
 import {
   createExportJob, readManifest, appendNdjson, recordOutput, finishJob, openTypeFile, deleteExportJob,
 } from "../lib/export-jobs.js";
@@ -67,10 +68,14 @@ export function mountExport(app: Hono, wh: DeltaWarehouse, baseUrl: string): voi
   const runExport = async (jobId: string, opts: { scope: "system" | "patient" | "group"; typeFilter?: string[]; since?: string; patientIds?: string[] }) => {
     try {
       const candidates = opts.scope === "system" ? r4CoreResourceTypes : ["Patient", ...compartmentTypes];
+      // Compartment-limited when patient ids are pinned (group export, or a patient-scoped
+      // caller constrained to their own launch compartment); otherwise the full population
+      // (system export, or a system-authorized all-patient Patient/$export).
+      const limited = (opts.patientIds?.length ?? 0) > 0;
       for (const rt of candidates) {
         if (!wh.hasTable(rt.toLowerCase())) continue;
         if (opts.typeFilter?.length && !opts.typeFilter.includes(rt)) continue;
-        const count = opts.scope === "group"
+        const count = limited
           ? await exportForPatients(jobId, rt, opts.patientIds ?? [])
           : await exportAll(jobId, rt, opts.since);
         if (count > 0) await recordOutput(jobId, rt, fileUrl(jobId, rt), count);
@@ -82,11 +87,28 @@ export function mountExport(app: Hono, wh: DeltaWarehouse, baseUrl: string): voi
   };
 
   const kickoff = (scope: "system" | "patient" | "group") => async (c: any) => {
+    // Authorization (bulk export bypasses the middleware's capitalized-path scope gate).
+    // When auth is on, a system/group export requires a SYSTEM-level read scope — a
+    // patient/user-context token must not be able to dump across the whole population.
+    // buildDataFilter now fails closed (throws) for an unauthorized token.
+    const auth = c.get("auth");
+    if (auth) {
+      const df = buildDataFilter(auth, "Resource", "s"); // throws forbidden if not authorized to read
+      if (scope !== "patient" && df.patientCompartmentId) {
+        throw forbidden("system/group $export requires a system-level read scope (patient-context token cannot export the population)");
+      }
+      if (scope === "patient" && df.patientCompartmentId) {
+        // Patient-scoped caller: constrain the export to their own compartment.
+        (c as any).__patientScopeId = df.patientCompartmentId;
+      }
+    }
     const of = c.req.query("_outputFormat") ?? "application/fhir+ndjson";
     if (!/ndjson/i.test(of)) throw badRequest("_outputFormat must be application/fhir+ndjson");
     const typeFilter = c.req.query("_type")?.split(",").map((s: string) => s.trim()).filter(Boolean);
     const since = c.req.query("_since");
     let patientIds: string[] | undefined;
+    const scopeId = (c as any).__patientScopeId as string | undefined;
+    if (scope === "patient" && scopeId) patientIds = [scopeId];
     if (scope === "group") {
       const group = await repo("Group").read(c.req.param("id")); // 404/410 if missing
       patientIds = ((group as any).member ?? [])
@@ -107,7 +129,15 @@ export function mountExport(app: Hono, wh: DeltaWarehouse, baseUrl: string): voi
   app.get("/Patient/$export", kickoff("patient"));
   app.get("/Group/:id/$export", kickoff("group"));
 
+  // Job ids are UUIDv7 (server-minted); resource-type file names are `[A-Za-z]+`. Reject
+  // anything else BEFORE it reaches the filesystem — jobId/type flow into join()ed paths
+  // (export-jobs.ts), so a `..%2f`/`..` value would traverse out of the export dir
+  // (arbitrary .ndjson/manifest read, arbitrary recursive delete).
+  const okJobId = (s: string) => /^[0-9a-f-]{36}$/i.test(s);
+  const okType = (s: string) => /^[A-Za-z]+$/.test(s);
+
   app.get("/_export-status/:jobId", async (c) => {
+    if (!okJobId(c.req.param("jobId"))) throw notFound("bulk export job", c.req.param("jobId"));
     const m = await readManifest(c.req.param("jobId"));
     if (!m) throw notFound("bulk export job", c.req.param("jobId"));
     if (m.status === "in-progress") {
@@ -126,12 +156,14 @@ export function mountExport(app: Hono, wh: DeltaWarehouse, baseUrl: string): voi
   });
 
   app.get("/_export-file/:jobId/:type", (c) => {
+    if (!okJobId(c.req.param("jobId")) || !okType(c.req.param("type"))) throw notFound("bulk export file", c.req.param("type"));
     const stream = openTypeFile(c.req.param("jobId"), c.req.param("type"));
     if (!stream) throw notFound("bulk export file", c.req.param("type"));
     return new Response(stream, { status: 200, headers: { "Content-Type": "application/fhir+ndjson" } });
   });
 
   app.delete("/_export-status/:jobId", async (c) => {
+    if (!okJobId(c.req.param("jobId"))) throw notFound("bulk export job", c.req.param("jobId"));
     await deleteExportJob(c.req.param("jobId"));
     return c.body(null, 202); // cancellation/deletion accepted
   });

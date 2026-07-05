@@ -3,3 +3,4 @@ node_modules/
 .delta-test/
 .delta-smoke/
 dist/
+.fhirengine-export/

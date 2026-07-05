@@ -97,4 +97,31 @@ describe("rewriteReferences", () => {
     expect(JSON.parse(out).subject.reference).toBe("Patient/new");
     expect(JSON.parse(out).performer[0].reference).toBe("Patient/other");
   });
+
+  it("does NOT corrupt an unrelated id that has the merged id as a prefix (substring bug)", () => {
+    // merge 123 → 999; Patient/1234 is a DIFFERENT patient and must be untouched.
+    const body = JSON.stringify({ subject: { reference: "Patient/1234" }, basedOn: [{ reference: "Patient/123" }] });
+    const out = JSON.parse(rewriteReferences(body, new Map([["123", "999"]])));
+    expect(out.subject.reference).toBe("Patient/1234"); // NOT Patient/9994
+    expect(out.basedOn[0].reference).toBe("Patient/999");
+  });
+
+  it("does not mutate free-text mentions, only reference fields", () => {
+    const body = JSON.stringify({ subject: { reference: "Patient/old" }, note: [{ text: "see Patient/old chart" }] });
+    const out = JSON.parse(rewriteReferences(body, new Map([["old", "new"]])));
+    expect(out.subject.reference).toBe("Patient/new");
+    expect(out.note[0].text).toBe("see Patient/old chart"); // free text left alone
+  });
+
+  it("rewrites versioned + absolute-URL references by exact id token", () => {
+    const body = JSON.stringify({
+      a: { reference: "Patient/old/_history/3" },
+      b: { reference: "http://ex.org/fhir/Patient/old" },
+      c: { reference: "http://ex.org/fhir/Patient/older" },
+    });
+    const out = JSON.parse(rewriteReferences(body, new Map([["old", "new"]])));
+    expect(out.a.reference).toBe("Patient/new/_history/3");
+    expect(out.b.reference).toBe("http://ex.org/fhir/Patient/new");
+    expect(out.c.reference).toBe("http://ex.org/fhir/Patient/older"); // exact token, not substring
+  });
 });

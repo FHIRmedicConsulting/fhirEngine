@@ -13,6 +13,7 @@
 
 import type { AuthContext } from "./auth-context.js";
 import { enforce, type RequestVerb } from "./scope-enforcer.js";
+import { forbidden } from "../lib/errors.js";
 
 export interface DataFilter {
   /** Patient compartment scope; null = no compartment filter. */
@@ -28,8 +29,11 @@ export function buildDataFilter(
 ): DataFilter {
   const result = enforce({ resourceType, verb, auth });
   if (!result.authorized) {
-    // Middleware should have already rejected; defensive empty filter
-    return { patientCompartmentId: null, queryRestrictions: {} };
+    // FAIL CLOSED. The prior "defensive empty filter" fell open: operation endpoints
+    // that bypass the middleware's capitalized-path scope check (`$export`, `_history`)
+    // called this and treated a null compartment as "no restriction" → an unauthorized
+    // token could read across all patients. Deny explicitly instead.
+    throw forbidden(result.denialReason ?? `Insufficient scope for ${verb} on ${resourceType}`);
   }
   const restrictions: Record<string, string[]> = {};
   for (const [k, values] of Object.entries(result.queryRestrictions)) {

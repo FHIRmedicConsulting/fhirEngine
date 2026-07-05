@@ -188,12 +188,35 @@ export function resolveIdentities(rows: MpiPatientRow[], opts?: { deceasedWindow
   return res;
 }
 
-/** Rewrite `Patient/<merged>` references to the survivor throughout a serialized body. */
+/** Rewrite a single FHIR reference string `Patient/<merged>[/_history/…]` (or an absolute
+ * URL ending in that) to the survivor. Exact id-token match only — a naive substring replace
+ * would corrupt an UNRELATED `Patient/1234` when merging `Patient/123`. */
+function rewriteRefString(ref: string, survivorOf: Map<string, string>): string {
+  const i = ref.lastIndexOf("Patient/");
+  if (i < 0) return ref;
+  const after = ref.slice(i + "Patient/".length); // "<id>" | "<id>/_history/2"
+  const slash = after.indexOf("/");
+  const id = slash < 0 ? after : after.slice(0, slash);
+  const survivor = survivorOf.get(id);
+  return survivor ? `${ref.slice(0, i)}Patient/${survivor}${slash < 0 ? "" : after.slice(slash)}` : ref;
+}
+
+/** Rewrite merged→survivor Patient references throughout a serialized resource body — walks
+ * the parsed structure and only touches actual `reference` fields (FHIR-correct: does not
+ * mutate free-text mentions, and is immune to id-substring collisions). */
 export function rewriteReferences(bodyJson: string, survivorOf: Map<string, string>): string {
   if (!survivorOf.size) return bodyJson;
-  let out = bodyJson;
-  for (const [merged, survivor] of survivorOf) {
-    out = out.split(`Patient/${merged}`).join(`Patient/${survivor}`);
-  }
-  return out;
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk);
+    if (node && typeof node === "object") {
+      const o = node as Record<string, unknown>;
+      for (const k of Object.keys(o)) {
+        if (k === "reference" && typeof o[k] === "string") o[k] = rewriteRefString(o[k] as string, survivorOf);
+        else o[k] = walk(o[k]);
+      }
+      return o;
+    }
+    return node;
+  };
+  return JSON.stringify(walk(JSON.parse(bodyJson)));
 }

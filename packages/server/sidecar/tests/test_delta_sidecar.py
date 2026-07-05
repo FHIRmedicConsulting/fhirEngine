@@ -7,6 +7,8 @@ Run: pip install -r requirements.txt pytest && pytest tests/  (from the sidecar 
 """
 import os
 
+import pytest
+
 import delta_sidecar as ds
 
 
@@ -143,3 +145,26 @@ def test_list_tables_missing_base(tmp_path):
 
 def test_object_store_rel_paths():
     assert ds._rel("s3://bucket/delta", "s3://bucket/delta/bronze/patient") == "bronze/patient"
+
+
+# --- security controls (audit 2026-07-05) ---
+def test_confine_rejects_traversal(tmp_path):
+    with pytest.raises(ValueError):
+        ds._confine(str(tmp_path) + "/../../etc/passwd")
+
+
+def test_confine_rejects_object_store_with_local_base():
+    with pytest.raises(ValueError):
+        ds._confine("s3://attacker-bucket/exfil")
+
+
+def test_confine_allows_normal_path(tmp_path):
+    p = str(tmp_path / "bronze" / "patient")
+    assert ds._confine(p) == p
+
+
+def test_merge_rejects_bad_key(tmp_path):
+    p = str(tmp_path / "patient")
+    ds.do_write({"table_path": p, "rows": [bronze("a", 1, True)], "schema": "bronze"})
+    with pytest.raises(ValueError):
+        ds.do_merge({"table_path": p, "rows": [bronze("a", 2, True)], "key": "id = 1 OR '' = ''"})

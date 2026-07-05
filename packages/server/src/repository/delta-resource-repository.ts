@@ -15,7 +15,7 @@
 import type { Resource as FhirResource } from "@fhirengine/fhir-types";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import { uuidv7 } from "../lib/uuid-v7.js";
-import { gone, notFound, preconditionFailed, unprocessable } from "../lib/errors.js";
+import { conflict, gone, notFound, preconditionFailed, unprocessable } from "../lib/errors.js";
 import { validateResource } from "../validation/validation-chain.js";
 import { bronzeRow } from "./ingest.js";
 import { quarantineOnUnknown } from "../lib/config.js";
@@ -103,13 +103,23 @@ export class DeltaResourceRepository {
     this.serveTable = wh.serveTableName(resourceType);
   }
 
-  /** Land version 1 in Bronze. Source `id` preserved; UUIDv7 fallback. */
+  /** Land version 1 in Bronze. Source `id` preserved (ingestion/migration); UUIDv7 fallback. */
   async create(input: FhirResource): Promise<FhirResource> {
     const now = this.clock();
-    const fhirId = input.id ?? uuidv7(now.getTime());
+    const clientId = input.id; // a caller-supplied id we're asked to preserve
+    const fhirId = clientId ?? uuidv7(now.getTime());
     const stamped = this.stamp(input, fhirId, 1, now);
     // Serialize on the table so concurrent writes don't race the version/commit (Priority #3).
-    await this.wh.serializeTable("bronze", this.resourceType, () => this.writeVersion(stamped, 1, now, false));
+    await this.wh.serializeTable("bronze", this.resourceType, async () => {
+      // A create that reuses an EXISTING id would land a second version-1 row: the sidecar's
+      // demote-and-insert MERGE then flips the old v1 back to is_current AND drops the new body,
+      // producing two current rows for one id (invariant break). Reject — use PUT to update.
+      if (clientId !== undefined) {
+        const existing = await this.currentRow(fhirId);
+        if (existing) throw conflict(`${this.resourceType}/${fhirId} already exists — use PUT to update`);
+      }
+      await this.writeVersion(stamped, 1, now, false);
+    });
     return stamped;
   }
 
@@ -262,7 +272,10 @@ export class DeltaResourceRepository {
     // _sort by an indexed param → join a per-id sort key (min value for that code); else last_updated.
     let withClause = `WITH ${cur}`;
     let from = "cur";
-    let orderBy = `last_updated ${dir}`;
+    // `, cur.id` is a deterministic tiebreaker so LIMIT/OFFSET paging is STABLE — bulk-loaded
+    // resources routinely share a last_updated (or sort key), and without it DataFusion may
+    // order ties differently between page requests → the same row on two pages / skipped rows.
+    let orderBy = `last_updated ${dir}, cur.id ${dir}`;
     const pageArgs: unknown[] = [...baseArgs];
     if (opts.sortParam) {
       // Numeric/quantity → min over the CAST values (TRY_CAST tolerates non-numeric index rows),
@@ -271,7 +284,7 @@ export class DeltaResourceRepository {
       withClause = `WITH ${cur}, sortk AS (SELECT id, ${keyExpr} AS sv FROM ${unnested} WHERE t.s.code = ? GROUP BY id)`;
       pageArgs.push(opts.sortParam); // sortk CTE arg, after cur's baseArgs
       from = "cur LEFT JOIN sortk ON cur.id = sortk.id";
-      orderBy = `sortk.sv ${dir}`;
+      orderBy = `sortk.sv ${dir}, cur.id ${dir}`;
     }
     pageArgs.push(...clauseArgs);
     const rows = await this.wh.query<{ body_json: string }>(

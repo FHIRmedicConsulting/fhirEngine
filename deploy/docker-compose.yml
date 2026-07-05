@@ -19,6 +19,8 @@ services:
     environment:
       FHIRENGINE_DELTA_SIDECAR_PORT: "8077"
       FHIRENGINE_DELTA_BASE: ${FHIRENGINE_DELTA_BASE:-/data/delta}
+      # Shared secret gating the sidecar (unauth'd full-PHI API otherwise). Same value on both.
+      FHIRENGINE_SIDECAR_TOKEN: ${FHIRENGINE_SIDECAR_TOKEN:-}
       # Object-store creds — only needed when FHIRENGINE_DELTA_BASE is s3://, gs://, az://
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
@@ -44,6 +46,7 @@ services:
     environment:
       FHIRENGINE_DEPLOY_MODE: self-hosted
       FHIRENGINE_DELTA_SIDECAR_URL: http://sidecar:8077
+      FHIRENGINE_SIDECAR_TOKEN: ${FHIRENGINE_SIDECAR_TOKEN:-}   # must match the sidecar's value
       # Must match the sidecar's base — the server sends table paths to the sidecar.
       FHIRENGINE_DELTA_BASE: ${FHIRENGINE_DELTA_BASE:-/data/delta}
       PORT: "3000"

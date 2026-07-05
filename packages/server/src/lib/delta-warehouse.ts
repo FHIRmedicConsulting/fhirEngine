@@ -81,6 +81,8 @@ export class DeltaWarehouse implements Warehouse {
   private readonly sidecarUrl: string;
   private readonly catalog: Catalog;
   private readonly base: string;
+  /** Shared-secret sent to the sidecar (X-Sidecar-Token) when FHIRENGINE_SIDECAR_TOKEN is set. */
+  private readonly sidecarToken = process.env.FHIRENGINE_SIDECAR_TOKEN ?? "";
   /** Storage topology (ADR-0026 / deployment-topology): `single` serves from Bronze;
    * `medallion` serves from Gold (populated by EXTERNAL promotion — Dagster/Databricks/
    * the promote CLI; fhirEngine itself only ingests to Bronze). */
@@ -230,7 +232,10 @@ export class DeltaWarehouse implements Warehouse {
   private async post<T>(route: string, body: unknown): Promise<T> {
     const res = await fetch(`${this.sidecarUrl}${route}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(this.sidecarToken ? { "X-Sidecar-Token": this.sidecarToken } : {}),
+      },
       body: JSON.stringify(body),
     });
     const json = (await res.json()) as Record<string, unknown>;

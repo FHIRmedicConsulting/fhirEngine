@@ -6,6 +6,38 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Security (deep-audit hardening, 2026-07-05)
+Findings from a full code-quality + vulnerability audit (4 specialist review passes + adversarial
+verification). Access-control fixes apply when auth is enabled (the PHI posture):
+- **Bulk `$export`/`$everything` and system `_history` are now scope-gated.** The auth middleware
+  only enforced scopes on capitalized resource paths, so operation/underscore endpoints reached
+  their handlers with merely a valid token; `$export` had no authz at all and `_history`'s guard
+  fell open. `buildDataFilter` now **fails closed**; system/group `$export` requires a system read
+  scope (a patient-context token cannot dump the population); a patient-scoped `Patient/$export` is
+  constrained to the caller's compartment.
+- **Cross-compartment writes blocked.** PUT/DELETE and conditional PUT/DELETE were not
+  compartment-gated — a patient-scoped write token could modify another patient's records. All
+  write paths now run the compartment guard.
+- **Bulk-export file routes hardened against path traversal.** `jobId`/`type` are validated before
+  touching the filesystem — a `..`-laden id could previously read arbitrary `.ndjson`/`manifest.json`
+  or recursively delete arbitrary directories.
+- **Sidecar hardening.** Optional shared-secret gate (`FHIRENGINE_SIDECAR_TOKEN`) on the
+  otherwise-unauthenticated storage sidecar (a full-PHI, destructive API); `..`-traversal +
+  object-store-exfil rejection on caller-supplied table paths; a request-body size cap; and merge
+  `key` identifier validation.
+
+### Fixed (correctness, from the audit)
+- **MPI reference rewrite corrupted unrelated patients.** `Patient/<merged>` rewriting used raw
+  substring replace, so merging `Patient/123` also rewrote `Patient/1234` (a different patient) and
+  mutated free-text. Now a structured walk rewrites only exact `reference` id-tokens.
+- **POST with an existing id broke the single-`is_current` invariant** (two current rows + silent
+  lost write) → now a 409 (use PUT to update).
+- **Unstable pagination** — search `ORDER BY` had no unique tiebreaker (ties could duplicate/skip
+  rows across pages); added `, id`.
+- **Token comma-OR ignored** — `status=active,completed` matched nothing; now an `IN(...)` OR.
+- **MPI survivor chains were iteration-order-dependent** — `loadSurvivorMap` now path-compresses
+  A→B→C to the terminal survivor.
+
 ## [0.1.0-alpha.3] - 2026-07-04
 
 ### Security

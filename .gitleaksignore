@@ -1,0 +1,6 @@
+# gitleaks allowlist. Format: <commit>:<path>:<rule>:<line> (fingerprints), one per line.
+
+# False positive: an EMPTY `RONIN_TLS_KEY=` placeholder in the pre-rename deploy/.env.example
+# template (no secret value). Flagged by newer gitleaks generic-api-key rule versions on the
+# KEY name. Historical commit; template value is blank. Not a real secret.
+eb33443dd3f2:deploy/.env.example:generic-api-key:35

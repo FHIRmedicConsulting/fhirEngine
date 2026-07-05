@@ -58,7 +58,21 @@ export async function loadSurvivorMap(wh: DeltaWarehouse): Promise<Map<string, s
     const rows = await wh.query<{ surviving_fhir_id: string; merged_fhir_id: string }>(
       "SELECT surviving_fhir_id, merged_fhir_id FROM patient_merge_history WHERE unmerged_at IS NULL",
     );
-    return new Map(rows.map((r) => [r.merged_fhir_id, r.surviving_fhir_id]));
+    // Path-compress chains (A→B, later B→C) to their TERMINAL survivor, so a reference
+    // resolves deterministically regardless of Map iteration order (A→C, not order-dependent
+    // A→B or A→C). Guard against cycles.
+    const direct = new Map(rows.map((r) => [r.merged_fhir_id, r.surviving_fhir_id]));
+    const terminal = new Map<string, string>();
+    for (const start of direct.keys()) {
+      let cur = start; const seen = new Set<string>([start]);
+      while (direct.has(cur)) {
+        cur = direct.get(cur)!;
+        if (seen.has(cur)) break; // cycle → stop
+        seen.add(cur);
+      }
+      terminal.set(start, cur);
+    }
+    return terminal;
   } catch {
     return new Map(); // no merge history yet
   }

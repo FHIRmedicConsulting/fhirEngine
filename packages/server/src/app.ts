@@ -4,12 +4,14 @@
  * Same framework as the private Databricks sibling (keep the codebases similar); the only thing different
  * below the `Warehouse` seam is the backend (delta-rs/DataFusion vs Databricks).
  *
- * v0 surface: /health, /metadata, and the generic `:resourceType` CRUD + search.
+ * Surface: /health + /ready, /metadata (+ SMART/UDAP discovery), the generic
+ * `:resourceType` CRUD + search, operations ($validate/$export/$everything/…), and the
+ * CMS-0057 B2B routes.
  *
- * NOTE (PHI): auth/audit are NOT wired here yet — this is a dev/conformance
- * harness for SYNTHETIC data only (Synthea). Per the PHI working rules, SMART/UDAP
- * auth (ADR-0006) + AuditEvent capture (ADR-0016) must be mounted before any real
- * PHI deployment.
+ * PHI posture: the SMART/UDAP auth gate (ADR-0030) and AuditEvent capture (ADR-0016) ARE
+ * wired here, but OPT-IN — mounted only when `FHIRENGINE_AUTH_ENABLED` / `FHIRENGINE_AUDIT_ENABLED`
+ * are set (default OFF = synthetic dev). The `production` security profile (ADR-0032) refuses
+ * to boot unless they're on. Turn them on for any real PHI deployment.
  */
 
 import { Hono } from "hono";

@@ -14,10 +14,22 @@ Run: python delta_sidecar.py [--port 8077] [--base <delta-root>]
 Deps: see requirements.txt (deltalake, pyarrow).
 """
 import argparse
+import hmac
 import json
 import os
+import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# Request-body ceiling (the sidecar is unauthenticated on the private network; don't let a
+# caller-supplied Content-Length OOM the process). Generous — Bronze writes can be large batches.
+_MAX_BODY_BYTES = int(os.environ.get("FHIRENGINE_SIDECAR_MAX_BODY_BYTES", 512 * 1024 * 1024))
+
+# Optional shared-secret gate. When FHIRENGINE_SIDECAR_TOKEN is set (recommended in any
+# multi-container/networked deploy — the sidecar exposes a full-PHI, destructive API with no
+# other auth), every non-/health request must present it in X-Sidecar-Token. Unset (dev/tests)
+# → no check, preserving the loopback trust model.
+_SIDECAR_TOKEN = os.environ.get("FHIRENGINE_SIDECAR_TOKEN", "")
 
 import pyarrow as pa
 from deltalake import DeltaTable, QueryBuilder, write_deltalake
@@ -90,6 +102,29 @@ def _to_table(rows, schema):
 def _is_object_store(path):
     """s3:// gs:// az:// abfs:// etc. — delta-rs handles these natively (no mkdir)."""
     return "://" in path and not path.startswith("file://")
+
+
+def _confine(path):
+    """Reject the concrete path-abuse vectors on a caller-supplied `table_path`.
+
+    `table_path` comes from the (trusted) server, but the sidecar has no transport auth by
+    default, so a direct caller on the network could try to exfil or traverse. This blocks:
+      - object-store exfil: writing to an object store when the base is local (would use the
+        server's cloud creds against an attacker bucket), or crossing to a different
+        object-store base;
+      - `..` path traversal out of the store tree.
+    (The strongest confinement — every path under one base — needs the server and sidecar to
+    share a base; that holds in the compose deploy but not the multi-base test harness, so the
+    authoritative gate for a hostile caller is the shared-secret token below, not this.)"""
+    if _is_object_store(_BASE):
+        if path != _BASE and not path.startswith(_BASE.rstrip("/") + "/"):
+            raise ValueError("table_path outside the configured object-store base")
+        return path
+    if _is_object_store(path):
+        raise ValueError("object-store table_path not allowed with a local base")
+    if ".." in path.replace("\\", "/").split("/"):
+        raise ValueError("table_path must not contain '..'")
+    return path
 
 
 # --- Validation (PRIOR to Bronze landing; R4 Core focus, profile-extensible) ---
@@ -200,7 +235,7 @@ def _creation_config(path):
 
 
 def do_write(req):
-    path = req["table_path"]
+    path = _confine(req["table_path"])
     rows = req["rows"]
     mode = req.get("mode", "append")
     schema = req.get("schema", "bronze")
@@ -232,9 +267,11 @@ def do_write(req):
 
 
 def do_merge(req):
-    path = req["table_path"]
+    path = _confine(req["table_path"])
     rows = req["rows"]
     key = req.get("key", "id")
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):  # key is a raw SQL identifier in the predicate
+        raise ValueError("invalid merge key")
     schema = req.get("schema", "bronze")
     if not _is_object_store(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -258,7 +295,7 @@ def do_write_version(req):
     prior version (is_current=false) in ONE Delta commit, so readers (snapshot-isolated) never
     see two current rows or zero current rows for an id. `prev_version_id` is the version being
     demoted (null on first create). Bronze schema only."""
-    path = req["table_path"]
+    path = _confine(req["table_path"])
     row = req["row"]
     prev = req.get("prev_version_id")
     if not _is_object_store(path):
@@ -294,7 +331,7 @@ def do_query(req):
         # break every unrelated query. A query that ACTUALLY references a skipped table
         # still gets a normal "table not found" from DataFusion.
         try:
-            dt = DeltaTable(path)
+            dt = DeltaTable(_confine(path))
         except Exception:
             continue
         qb = qb.register(name, dt)
@@ -450,7 +487,7 @@ def do_optimize_all(req):
 def do_delete(req):
     """Delete rows matching a SQL predicate (idempotent replace, e.g. one value-set's
     expansion before re-loading). No predicate → delete all rows. Skips a missing table."""
-    path = req["table_path"]
+    path = _confine(req["table_path"])
     try:
         dt = DeltaTable(path)
     except Exception:
@@ -481,13 +518,24 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, {"error": "not found"})
 
+    def _authed(self):
+        if not _SIDECAR_TOKEN:
+            return True  # no token configured → trust the network (dev / loopback)
+        return hmac.compare_digest(self.headers.get("X-Sidecar-Token", ""), _SIDECAR_TOKEN)
+
     def do_POST(self):
         handler = ROUTES.get(self.path)
         if not handler:
             self._send(404, {"error": "not found"})
             return
+        if not self._authed():
+            self._send(401, {"error": "Unauthorized"})
+            return
         try:
             n = int(self.headers.get("Content-Length", 0))
+            if n > _MAX_BODY_BYTES:  # reject before reading — no auth here, don't let a caller OOM us
+                self._send(413, {"error": "PayloadTooLarge", "detail": f"body exceeds {_MAX_BODY_BYTES} bytes"})
+                return
             req = json.loads(self.rfile.read(n) or b"{}")
             self._send(200, handler(req))
         except Exception as e:  # surface the error to the TS caller

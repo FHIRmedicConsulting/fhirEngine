@@ -105,4 +105,22 @@ describe.skipIf(!SIDECAR)("Standalone Delta resource flow (delta-rs + DataFusion
     const res = await req("POST", "/Patient", { resourceType: "Observation", id: "x" });
     expect(res.status).toBe(400);
   });
+
+  // --- security-audit regressions (2026-07-05) ---
+  it("POST reusing an existing id is a 409 conflict (no second is_current row)", async () => {
+    const cid = `dup-${Date.now()}`;
+    expect((await req("POST", "/Patient", { resourceType: "Patient", id: cid, gender: "male" })).status).toBe(201);
+    expect((await req("POST", "/Patient", { resourceType: "Patient", id: cid, gender: "female" })).status).toBe(409);
+    const s = await (await req("GET", `/Patient?_id=${cid}`)).json();
+    expect(s.total).toBe(1); // exactly one current row (invariant held)
+  });
+
+  it("token comma-OR (status=a,b) matches either value", async () => {
+    const subj = `Patient/or-${Date.now()}`;
+    for (const st of ["active", "completed", "on-hold"]) {
+      await req("POST", "/MedicationRequest", { resourceType: "MedicationRequest", status: st, intent: "order", subject: { reference: subj }, medicationCodeableConcept: { text: "x" } });
+    }
+    const r = await (await req("GET", `/MedicationRequest?status=active,completed&subject=${subj}`)).json();
+    expect(r.total).toBe(2); // active + completed, not on-hold
+  });
 });
