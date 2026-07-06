@@ -217,6 +217,28 @@ export class DeltaWarehouse implements Warehouse {
     await this.postWrite(path, "/write", { table_path: path, rows, mode, schema: "infer" });
   }
 
+  /** System-level `_history` across many Bronze tables in ONE DataFusion query — UNION ALL of
+   * (rt, id, version_id, last_updated, body_json, deleted) ORDER BY last_updated DESC, id DESC,
+   * paged in the engine. Replaces the old per-type fan-out that pulled offset+count rows from
+   * every table into Node and sorted in JS. `types` are proper-case R4 type names whose Bronze
+   * tables are registered (caller filters by hasTable). Returns the page + the true total. */
+  async systemHistory(types: string[], count: number, offset: number): Promise<{ rows: Array<Record<string, unknown> & { rt: string }>; total: number }> {
+    if (!types.length) return { rows: [], total: 0 };
+    // rt is a literal type name (fixed allowlist); table name is its lowercase form — no injection.
+    const union = types
+      .map((t) => `SELECT '${t}' AS rt, id, version_id, last_updated, body_json, deleted FROM ${t.toLowerCase()}`)
+      .join(" UNION ALL ");
+    const lim = Math.max(0, Math.min(Math.trunc(count), 1000));
+    const off = Math.max(0, Math.trunc(offset));
+    const [rows, totalRows] = await Promise.all([
+      this.query<Record<string, unknown> & { rt: string }>(
+        `SELECT rt, id, version_id, last_updated, body_json, deleted FROM (${union}) ORDER BY last_updated DESC, id DESC LIMIT ${lim} OFFSET ${off}`,
+      ),
+      this.query<{ n: number }>(`SELECT count(*) AS n FROM (${union})`),
+    ]);
+    return { rows, total: Number(totalRows[0]?.n ?? 0) };
+  }
+
   /** Register a conformance-store table for queries. */
   registerConformance(table: string): string {
     this.registerTable(table, this.catalog.conformancePath(table));

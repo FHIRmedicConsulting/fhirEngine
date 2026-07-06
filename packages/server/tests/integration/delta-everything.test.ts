@@ -50,4 +50,21 @@ describe.skipIf(!SIDECAR)("REST: Patient/$everything", () => {
   it("404s $everything on an unknown patient", async () => {
     expect((await req("GET", `/Patient/missing${ts}/$everything`)).status).toBe(404);
   });
+
+  // Feature-completeness: $everything now paginates (_count/_getpagesoffset + next link) and
+  // honors _since (both were previously missing — one unbounded bundle, _since ignored).
+  it("paginates with _count + emits a next link; total is the full compartment", async () => {
+    const b1 = await (await req("GET", `/Patient/${pid}/$everything?_count=2`)).json();
+    expect(b1.total).toBe(4); // patient + 2 Observation + 1 Condition
+    expect(b1.entry.length).toBe(2);
+    expect(b1.link.some((l: any) => l.relation === "next")).toBe(true);
+    const b2 = await (await req("GET", `/Patient/${pid}/$everything?_count=2&_getpagesoffset=2`)).json();
+    expect(b2.entry.length).toBe(2);
+    expect(b2.link.some((l: any) => l.relation === "next")).toBe(false); // last page
+  });
+
+  it("honors _since (a future _since returns nothing)", async () => {
+    const b = await (await req("GET", `/Patient/${pid}/$everything?_since=2099-01-01`)).json();
+    expect(b.total).toBe(0);
+  });
 });

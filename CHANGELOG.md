@@ -7,6 +7,13 @@ All notable changes to fhirEngine are documented here. Format based on
 ## [Unreleased]
 
 ### Changed / fixed (feature-completeness follow-ups)
+- **`Patient/$everything` now paginates and honors `_since`.** It previously returned the entire
+  compartment in one unbounded Bundle and ignored `_since`. Now `_count`/`_getpagesoffset` page a
+  deterministically-ordered result with a `next` link, and `_since` filters by `meta.lastUpdated`.
+- **System `_history` no longer fans out across 146 tables in Node.** It ran one query per resource
+  type, pulled `offset+count` rows from every table into memory, and JS-sorted per request. It's now
+  a single DataFusion `UNION ALL … ORDER BY last_updated DESC, id DESC LIMIT/OFFSET` — the engine
+  sorts and pages; `total` is one `count(*)`.
 - **Validation now rejects unknown/extra elements** (structural validator) — a resource with a
   garbage or **typo'd** element (e.g. `deceasedBolean` for `deceasedBoolean`, `valueStrng` for
   `valueString`) was previously accepted silently; it's now a 422. FHIR base elements the

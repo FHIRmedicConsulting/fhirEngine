@@ -397,7 +397,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     });
   });
 
-  // GET|POST /Patient/:id/$everything  — the patient + its compartment members.
+  // GET|POST /Patient/:id/$everything  — the patient + its compartment members, PAGED + _since.
   const everything = async (c: any) => {
     const id = c.req.param("id");
     // patient-compartment scope: a patient-restricted token may only run $everything for its own patient.
@@ -406,17 +406,39 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     const patient = await repo("Patient").read(id); // 404/410 guard
     const ref = `Patient/${id}`;
     const typeFilter = c.req.query("_type")?.split(",").map((s: string) => s.trim()).filter(Boolean);
+    const since = c.req.query("_since") || undefined; // filter by meta.lastUpdated (was ignored)
+    const count = clampInt(c.req.query("_count"), 100);
+    const offset = clampInt(c.req.query("_getpagesoffset"), 0);
     // The patient record itself is consent-gated too (throws 403 if the caller can't see it).
     await enforceReadConsent(wh, patient, c.get("auth"));
     const auth = c.get("auth");
-    const entry: any[] = [{ fullUrl: `${baseUrl}/Patient/${id}`, resource: applyObligations(patient, auth), search: { mode: "match" } }];
+    const sinceOk = (r: FhirResource) => !since || String((r.meta as { lastUpdated?: string } | undefined)?.lastUpdated ?? "") >= since;
+
+    // Assemble the full compartment (patient + members), then paginate for a stable, bounded page.
+    const all: FhirResource[] = sinceOk(patient) ? [patient] : [];
     for (const [rt, params] of Object.entries(patientCompartment)) {
       if (rt === "Patient" || !wh.hasTable(rt.toLowerCase())) continue;
       if (typeFilter?.length && !typeFilter.includes(rt)) continue;
       const matches = (await filterReadConsent(wh, await repo(rt).findReferencing(params, ref), auth)).allowed;
-      for (const m of matches) entry.push({ fullUrl: `${baseUrl}/${rt}/${m.id}`, resource: applyObligations(m, auth), search: { mode: "match" } });
+      for (const m of matches) if (sinceOk(m)) all.push(m);
     }
-    return c.json({ resourceType: "Bundle", type: "searchset", timestamp: new Date().toISOString(), total: entry.length, entry });
+    // Deterministic order (resourceType, id) so paging is stable across requests.
+    all.sort((a, b) => `${(a as any).resourceType}/${a.id}`.localeCompare(`${(b as any).resourceType}/${b.id}`));
+    const total = all.length;
+    const page = all.slice(offset, offset + count);
+
+    const query = new URLSearchParams(c.req.url.split("?")[1] ?? "");
+    const link = [{ relation: "self", url: `${baseUrl}/Patient/${id}/$everything?${query.toString()}` }];
+    if (offset + count < total) {
+      const nx = new URLSearchParams(query);
+      nx.set("_count", String(count));
+      nx.set("_getpagesoffset", String(offset + count));
+      link.push({ relation: "next", url: `${baseUrl}/Patient/${id}/$everything?${nx.toString()}` });
+    }
+    return c.json({
+      resourceType: "Bundle", type: "searchset", timestamp: new Date().toISOString(), total, link,
+      entry: page.map((r) => ({ fullUrl: `${baseUrl}/${(r as any).resourceType}/${r.id}`, resource: applyObligations(r, auth), search: { mode: "match" } })),
+    });
   };
   app.get("/Patient/:id/$everything", everything);
   app.post("/Patient/:id/$everything", everything);
@@ -430,16 +452,10 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     if (dataFilterFor(c, "Resource", "s")?.patientCompartmentId) throw forbidden("system-level _history is not available under a patient-restricted scope");
     const count = clampInt(c.req.query("_count"), 50);
     const offset = clampInt(c.req.query("_getpagesoffset"), 0);
-    const all: Array<{ rt: string; v: any }> = [];
-    let total = 0;
-    for (const rt of r4CoreResourceTypes) {
-      if (!wh.hasTable(rt.toLowerCase())) continue;
-      const { rows, total: t } = await repo(rt).historyAll(offset + count, 0); // enough to page post-merge
-      total += t;
-      for (const v of rows) all.push({ rt, v });
-    }
-    all.sort((a, b) => (String(b.v.last_updated)).localeCompare(String(a.v.last_updated))); // newest first
-    const page = all.slice(offset, offset + count);
+    // One DataFusion UNION+ORDER+LIMIT across all existing Bronze tables — the engine sorts +
+    // pages (was: pull offset+count from all 146 tables into Node and JS-sort per request).
+    const types = r4CoreResourceTypes.filter((rt) => wh.hasTable(rt.toLowerCase()));
+    const { rows: page, total } = await wh.systemHistory(types, count, offset);
     const query = new URLSearchParams(c.req.url.split("?")[1] ?? "");
     const link = [{ relation: "self", url: `${baseUrl}/_history?${query.toString()}` }];
     if (offset + count < total) {
@@ -454,7 +470,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
       timestamp: new Date().toISOString(),
       total,
       link,
-      entry: page.map(({ rt, v }) => historyEntry(v, baseUrl, rt, c.get("auth"))),
+      entry: page.map((row) => historyEntry(row as any, baseUrl, row.rt, c.get("auth"))),
     });
   });
 
