@@ -6,6 +6,19 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-08-05
+
+### Testing (coverage-audit closure)
+- **The audit-flagged zero-coverage clinical/security modules are now unit-tested** (100 new
+  tests; unit suite 198 → 322): repository-side data filtering (`buildDataFilter` fail-closed
+  paths), the `$export` job store + route guards (path traversal, patient-token population-dump
+  block), search-index/ingest materialization (choice-type dates, Period start+end, token/string/
+  quantity/reference extraction), terminology file loaders (LOINC/SNOMED/RxNorm fixtures) and the
+  quarantine reconciler (resolve/dead-letter/keep routing), the JWKS/OIDC auth strategies (forged
+  keys, `alg=none`, iss/aud pinning, RFC 7662 client auth), and the OAuth code/refresh/jti store
+  (one-time codes, rotation on use, replay detection). Post-fix line coverage on the flagged
+  modules: 94–100%.
+
 ### Changed / fixed (feature-completeness follow-ups)
 - **`Patient/$everything` now paginates and honors `_since`.** It previously returned the entire
   compartment in one unbounded Bundle and ignored `_since`. Now `_count`/`_getpagesoffset` page a
@@ -226,7 +239,8 @@ Audit-backlog batch (2026-07-05):
   components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). CARIN
   BB / PDex **profile conformance** (validating against those profiles) still requires IG install (L5).
 
-[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.4...main
+[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.5...main
+[0.1.0-alpha.5]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.1...v0.1.0-alpha.2

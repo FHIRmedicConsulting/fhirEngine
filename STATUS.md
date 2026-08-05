@@ -5,13 +5,16 @@ _Living snapshot of where the project is._
 **Product:** open-source (Apache-2.0), no-Databricks FHIR R4 server on OSS Delta Lake
 (delta-rs / DataFusion via a Python sidecar; TypeScript/Hono REST tier). Local-first.
 
-**Health:** **175 integration + 198 unit + 11 sidecar (pytest) green · typecheck + lint clean · CI hardened**
+**Health:** **196 integration + 322 unit + 16 sidecar (pytest) green · typecheck + lint clean · CI hardened**
 (unit · supply-chain audit/SBOM/pip-audit · gitleaks+Trivy scan · integration w/ fail-hard sidecar +
 boot smoke · release workflow). Two internal deep reviews (2026-07-02, and the OSS-alpha
 review 2026-07-04) fully addressed
 (all 10 items done — deploy secure-by-default, honest claims, SECURITY.md/CONTRIBUTING/CoC, config
 reference, unsupported-search rejection, ADR-0023 ratified + NOTICE, graceful shutdown + `/ready`,
-sidecar tests).
+sidecar tests). External coverage audit (2026-08-05) closed: the flagged zero-coverage
+clinical/security modules (data filtering, `$export` job store/route, search indexing, terminology
+loaders + reconciler, JWKS/OIDC strategies, OAuth store) now carry dedicated unit suites at 94–100%
+line coverage.
 
 ---
 

@@ -14,7 +14,7 @@ import { listInstalledProfiles } from "./ig-loader.js";
 import { smartSecurityBlock } from "./smart-configuration.js";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 
-const SOFTWARE_VERSION = "0.1.0-alpha.4";
+const SOFTWARE_VERSION = "0.1.0-alpha.5";
 
 export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: string): Promise<Record<string, unknown>> {
   const profilesByType = new Map<string, string[]>();
