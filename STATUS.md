@@ -39,11 +39,12 @@ line coverage.
 > **Honest status:** this is **not** an ONC certification claim — do not say "passes (g)(10)."
 > What's verified: individual **US Core v6.1.0** resource/search/read groups pass; profile
 > `validation_test` passes with external tx suppressed (Option B); and as of **Run 12 (2026-08-05)**
-> the **OAuth-gated app groups run end-to-end**: Standalone Patient App (Full + Limited) and EHR
-> Practitioner App pass everything except the TLS checks (expected on the plain-HTTP local harness)
-> — the full authorize/PKCE/token/refresh/OIDC dance against the real kit. Not yet driven: Additional
-> Authorization Tests (needs an RFC 7662 introspection endpoint + asymmetric-client verification on
-> the auth-code grant), Multi-Patient/Bulk, and the TLS suite (needs a TLS deployment).
+> the **OAuth-gated app groups run end-to-end**: Standalone Patient App (Full + Limited), EHR
+> Practitioner App, and (Run 13) **Additional Authorization Tests** — public + asymmetric clients,
+> v1 + fine-grained granular scopes, granular scope selection, RFC 7662 token introspection, and the
+> invalid-aud/token/PKCE negatives — all pass everything except the TLS checks (expected on the
+> plain-HTTP local harness). Not yet driven: Multi-Patient/Bulk against the harness, the Single
+> Patient API groups, attestations, and the TLS suite (needs a TLS deployment).
 
 Harness stood up (docker g10 kit); server driven headlessly. **Run 9 (2026-07-03) — validator LIVE:**
 fixed the OOM (Docker VM → **12 GB** + validator **`-Xmx8g`**) and the base-URL mismatch (server

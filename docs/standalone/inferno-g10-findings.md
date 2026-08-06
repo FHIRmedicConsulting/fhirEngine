@@ -551,3 +551,45 @@ access, and the full PKCE S256 dance all pass against the real harness.
 - **Groups 4/5/6/10/12 Single Patient API** — token-gated US Core CRUD/search (largely proven by the
   us_core_v610 suite runs; needs validator up).
 - **TLS suite** — needs a TLS deployment in front of the server (deploy/proxy work, not code).
+
+---
+
+## Run 13 (2026-08-06) — Additional Authorization Tests (group 9): 134 pass, zero non-TLS fails
+
+Group 9 (the deepest OAuth surface in the kit — public client, asymmetric client, SMART v1 scopes,
+fine-grained granular scopes, granular scope selection, token introspection, invalid-aud/token/PKCE
+negatives, EHR-launch-with-patient-scopes, token-revocation attestation) now runs headlessly:
+**134 pass / 21 skip / 35 fail — every fail is a TLS check** (plain-http harness, expected).
+
+**New server features/fixes (all kept in the product, unit-tested):**
+1. **SECURITY: asymmetric confidential clients are now actually authenticated.** The token
+   endpoint's secret check fell open for clients registered with only a JWKS: anyone who knew the
+   client_id could redeem its authorization codes. Now: secret-less confidential clients MUST
+   present a valid `private_key_jwt` client_assertion (verified against the registered JWKS, aud =
+   token endpoint, iss=sub=client_id, one-time jti); clients with neither secret nor key fail
+   closed. `client_id` may come from the assertion's `iss` alone (RFC 7523 — Inferno sends no
+   client_id param for asymmetric auth).
+2. **RFC 7662 token introspection** at `POST /oauth/introspect` (public, pre-gate), advertised as
+   `introspection_endpoint` in smart-configuration. Active = signature verifies against our JWKS +
+   unexpired; inactive responses carry no detail (§2.2). Opaque refresh tokens introspect inactive.
+3. **Granted scopes normalize to v2 grammar** (`read`→`rs`, `write`→`cud`, `*`→`cruds`): STU2
+   launch tests assert the granted form even when the app requested v1 scopes.
+4. **Granular scope selection** via `FHIRENGINE_OAUTH_SCOPE_SUBSTITUTIONS` (JSON map requested →
+   replacement scopes): emulates the user narrowing consent to granular sub-scopes in the headless
+   auto-approve step. For the g10 selection test, Condition/Observation resource-level scopes map to
+   the kit's category-granular scopes. NOTE: env-gated — enable only for the selection group in a
+   full cert run (it would narrow the full-access groups' grants otherwise).
+
+**Driver/input gotchas (for the next operator):**
+- The asymmetric `auth_info` needs `encryption_algorithm` (NOT `encryption_method`): `ES384` selects
+  Inferno's bundled EC key, published at `http://localhost/custom/smart_stu2/.well-known/jwks.json`
+  — registered server-side as the `inferno_asymmetric` client's `jwksUri`.
+- Cancelling a queued Inferno run can wedge it in `cancelling` forever, blocking its session
+  (409 on new runs). Group 9's inputs are self-contained (explicit `auth_url`/`token_url` +
+  `standalone_patient_id`), so just start a fresh session.
+- Server env additions for this run: `inferno_public` (public) + `inferno_asymmetric`
+  (confidential, jwksUri above) in `FHIRENGINE_OAUTH_CLIENTS`, plus the substitutions env.
+
+**Remaining for full (g)(10):** Multi-Patient API groups 7/8 (Backend Services + Bulk `$export`
+against the harness), Single Patient API groups (token-gated US Core; validator-dependent),
+Visual Inspection attestations, and the TLS suite (deployment, not code).

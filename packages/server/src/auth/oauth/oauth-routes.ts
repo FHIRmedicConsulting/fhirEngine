@@ -16,7 +16,7 @@
  * registration, X.509 software statements) — a documented follow-up.
  */
 import { Hono } from "hono";
-import { jwtVerify, decodeJwt } from "jose";
+import { jwtVerify, decodeJwt, createLocalJWKSet } from "jose";
 import { publicJwks } from "./keys.js";
 import { putCode, takeCode, putRefresh, takeRefresh, jtiReplay } from "./store.js";
 import { signAccessToken, signIdToken, verifyPkce } from "./tokens.js";
@@ -35,6 +35,30 @@ function launchContext(scope: string): { patient?: string; encounter?: string; u
   const encounter = wantsEncounter ? process.env.FHIRENGINE_OAUTH_DEFAULT_ENCOUNTER : undefined;
   const user = process.env.FHIRENGINE_OAUTH_DEFAULT_USER ?? (patient ? `Patient/${patient}` : undefined);
   return { patient, encounter, user };
+}
+
+/** Normalize SMART v1 scope suffixes to v2 (`read`→`rs`, `write`→`cud`, `*`→`cruds`). SMART 2.x
+ * servers respond in v2 grammar even when the app requested v1 (§scopes-for-requesting-fhir-
+ * resources); (g)(10) STU2 launch tests assert the granted form. */
+function normalizeScopesToV2(scope: string): string {
+  return scope.split(/\s+/).filter(Boolean).map((s) => {
+    const m = /^(patient|user|system)\/([A-Za-z*]+)\.(read|write|\*)$/.exec(s);
+    if (!m) return s;
+    const suffix = m[3] === "read" ? "rs" : m[3] === "write" ? "cud" : "cruds";
+    return `${m[1]}/${m[2]}.${suffix}`;
+  }).join(" ");
+}
+
+/** Operator-configured granular scope selection: `FHIRENGINE_OAUTH_SCOPE_SUBSTITUTIONS` = JSON map
+ * of requested scope → replacement scope(s). Emulates the user narrowing consent to granular
+ * sub-scopes in this headless auto-approve authorize step ((g)(10) granular scope selection —
+ * a real deployment surfaces this as a consent-screen choice). Unset = grant as requested. */
+function applyScopeSubstitutions(scope: string): string {
+  const raw = process.env.FHIRENGINE_OAUTH_SCOPE_SUBSTITUTIONS;
+  if (!raw) return scope;
+  let map: Record<string, string>;
+  try { map = JSON.parse(raw) as Record<string, string>; } catch { return scope; }
+  return scope.split(/\s+/).filter(Boolean).map((s) => map[s] ?? s).join(" ");
 }
 
 export function oauthRoutes(baseUrl: string): Hono {
@@ -122,7 +146,7 @@ export function oauthRoutes(baseUrl: string): Hono {
       if (!p.code_challenge) return back({ error: "invalid_request", error_description: "code_challenge required (PKCE)" });
       if ((p.code_challenge_method ?? "plain") !== "S256") return back({ error: "invalid_request", error_description: "code_challenge_method must be S256" });
     }
-    const scope = p.scope ?? "";
+    const scope = applyScopeSubstitutions(normalizeScopesToV2(p.scope ?? ""));
     const { patient, encounter, user } = launchContext(scope);
     const code = putCode({ clientId: clientId!, redirectUri, scope, codeChallenge: p.code_challenge, codeChallengeMethod: p.code_challenge_method, patient, encounter, user, nonce: p.nonce });
     return back({ code });
@@ -135,18 +159,59 @@ export function oauthRoutes(baseUrl: string): Hono {
     const err = (code: string, desc?: string, status = 400) =>
       c.json({ error: code, ...(desc ? { error_description: desc } : {}) }, status as 400);
 
-    // client authentication: confidential → client_secret (basic/post); public → client_id + PKCE.
+    // Verify a private_key_jwt client_assertion (RFC 7523 §3 / SMART asymmetric auth) against the
+    // client's registered JWKS: aud = this token endpoint, iss = sub = client_id, one-time jti.
+    // Returns the authenticated client_id or null.
+    const verifyClientAssertion = async (assertion: string, expectedCid?: string): Promise<string | null> => {
+      let peek: Record<string, unknown>;
+      try { peek = decodeJwt(assertion); } catch { return null; }
+      const cid = (peek.iss ?? peek.sub) as string | undefined;
+      if (expectedCid && cid !== expectedCid) return null;
+      const client = cid ? resolveClient(cid) : null;
+      const keySet = client ? clientKeySet(client) : null;
+      if (!client || !keySet) return null;
+      try {
+        // Advertised signing algs only (token_endpoint_auth_signing_alg_values_supported).
+        const { payload } = await jwtVerify(assertion, keySet, { audience: `${baseUrl}/oauth/token`, algorithms: ["RS256", "ES384"] });
+        if (payload.iss !== cid || payload.sub !== cid) return null;
+        if (!payload.jti || jtiReplay(String(payload.jti))) return null;
+        return cid!;
+      } catch { return null; }
+    };
+
+    // client authentication: confidential-symmetric → client_secret (basic/post);
+    // confidential-asymmetric → private_key_jwt client_assertion; public → client_id + PKCE.
     const basic = c.req.header("Authorization")?.startsWith("Basic ")
       ? Buffer.from(c.req.header("Authorization")!.slice(6), "base64").toString().split(":")
       : null;
-    const clientId = body.get("client_id") ?? basic?.[0] ?? undefined;
+    let clientId = body.get("client_id") ?? basic?.[0] ?? undefined;
     const clientSecret = body.get("client_secret") ?? basic?.[1] ?? undefined;
+    // Asymmetric clients identify via the assertion alone (RFC 7523 — no client_id param):
+    // derive the claimed id from the assertion's iss; verification below still has to prove it.
+    if (!clientId && body.get("client_assertion")) {
+      try { clientId = (decodeJwt(body.get("client_assertion")!).iss as string | undefined) ?? undefined; } catch { /* falls through to unknown client_id */ }
+    }
     // client_credentials authenticates via the client_assertion (below), not client_id/secret.
     if (grantType !== "client_credentials") {
       const client = clientId ? resolveClient(clientId) : null;
       if (!client) return err("invalid_client", "unknown client_id", 401);
-      if (client.type === "confidential" && client.secret && client.secret !== clientSecret) {
-        return err("invalid_client", "bad client_secret", 401);
+      if (client.type === "confidential") {
+        if (client.secret) {
+          if (client.secret !== clientSecret) return err("invalid_client", "bad client_secret", 401);
+        } else if (clientKeySet(client)) {
+          // Asymmetric confidential client: REQUIRE a verified assertion. (Was: accepted with no
+          // authentication at all — a client registered with only a JWKS fell through the secret
+          // check, so anyone knowing the client_id could redeem its codes.)
+          const assertion = body.get("client_assertion");
+          if (body.get("client_assertion_type") !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" || !assertion) {
+            return err("invalid_client", "asymmetric client requires client_assertion_type=jwt-bearer + client_assertion", 401);
+          }
+          if (!(await verifyClientAssertion(assertion, clientId))) {
+            return err("invalid_client", "client_assertion verification failed", 401);
+          }
+        } else {
+          return err("invalid_client", "confidential client has no registered secret or key", 401);
+        }
       }
     }
 
@@ -194,24 +259,41 @@ export function oauthRoutes(baseUrl: string): Hono {
       if (body.get("client_assertion_type") !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" || !assertion) {
         return err("invalid_client", "backend services requires client_assertion_type=jwt-bearer + client_assertion", 401);
       }
-      let peek: Record<string, unknown>;
-      try { peek = decodeJwt(assertion); } catch { return err("invalid_client", "malformed client_assertion", 401); }
-      const cid = (peek.iss ?? peek.sub) as string | undefined;         // client_id == assertion iss == sub
-      const bsClient = cid ? resolveClient(cid) : null;
-      const keySet = bsClient ? clientKeySet(bsClient) : null;
-      if (!bsClient || !keySet) return err("invalid_client", "unknown client or no registered key", 401);
-      try {
-        // Advertised signing algs only (token_endpoint_auth_signing_alg_values_supported).
-        const { payload } = await jwtVerify(assertion, keySet, { audience: `${baseUrl}/oauth/token`, algorithms: ["RS256", "ES384"] });
-        if (payload.iss !== cid || payload.sub !== cid) return err("invalid_client", "assertion iss/sub must equal client_id", 401);
-        if (!payload.jti || jtiReplay(String(payload.jti))) return err("invalid_client", "missing or replayed jti", 401);
-      } catch { return err("invalid_client", "client_assertion verification failed", 401); }
+      const cid = await verifyClientAssertion(assertion);
+      if (!cid) return err("invalid_client", "client_assertion verification failed", 401);
       const scope = body.get("scope") ?? "";
       const access = await signAccessToken({ sub: cid!, scope, clientId: cid!, iss, aud: fhirAud, ttlSeconds: 300 });
       return c.json({ access_token: access, token_type: "Bearer", expires_in: 300, scope }, 200, { "Cache-Control": "no-store", Pragma: "no-cache" });
     }
 
     return err("unsupported_grant_type", `unsupported grant_type: ${grantType}`);
+  });
+
+  // --- Token introspection (RFC 7662; SMART App Launch STU2 §token-introspection) ---
+  // Standard form body (`token` + optional `token_type_hint`). Active = the token was issued by
+  // this server (signature verifies against our JWKS) and is unexpired; anything else →
+  // {active:false} with no detail (RFC 7662 §2.2 — don't leak why). Refresh tokens are opaque
+  // handles, not JWTs, so they introspect as inactive by design.
+  app.post("/oauth/introspect", async (c) => {
+    const body = new URLSearchParams(await c.req.text());
+    const token = body.get("token");
+    if (!token) return c.json({ error: "invalid_request", error_description: "token required" }, 400);
+    try {
+      const keySet = createLocalJWKSet((await publicJwks()) as Parameters<typeof createLocalJWKSet>[0]);
+      const { payload } = await jwtVerify(token, keySet, { issuer: iss });
+      const p = payload as Record<string, unknown>;
+      return c.json({
+        active: true,
+        scope: p.scope ?? "",
+        client_id: p.client_id,
+        token_type: "Bearer",
+        exp: payload.exp, iat: payload.iat, iss: payload.iss, sub: payload.sub, aud: payload.aud,
+        ...(p.patient ? { patient: p.patient } : {}),
+        ...(p.fhirUser ? { fhirUser: p.fhirUser } : {}),
+      });
+    } catch {
+      return c.json({ active: false });
+    }
   });
 
   return app;
