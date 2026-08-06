@@ -24,12 +24,17 @@ import { resolveClient, redirectAllowed, clientKeySet } from "./clients.js";
 
 export const oauthEnabled = (): boolean => process.env.FHIRENGINE_OAUTH_ENABLED === "true";
 
-/** Patient/user launch context for the auto-approve flow (dev/test — configured, not picked). */
-function launchContext(scope: string): { patient?: string; user?: string } {
-  const wantsPatient = /(^|\s)(launch\/patient|patient\/)/.test(scope);
+/** Patient/user/encounter launch context for the auto-approve flow (dev/test — configured, not picked). */
+function launchContext(scope: string): { patient?: string; encounter?: string; user?: string } {
+  // `launch` (EHR launch) and `launch/patient` (standalone) both resolve the configured patient
+  // context; patient/* scopes alone imply it too (the token must be compartment-scoped).
+  const wantsPatient = /(^|\s)(launch|launch\/patient|patient\/)/.test(scope);
   const patient = wantsPatient ? process.env.FHIRENGINE_OAUTH_DEFAULT_PATIENT : undefined;
+  // Encounter context for EHR launch (`launch` scope) or explicit `launch/encounter`.
+  const wantsEncounter = /(^|\s)(launch|launch\/encounter)(\s|$)/.test(scope);
+  const encounter = wantsEncounter ? process.env.FHIRENGINE_OAUTH_DEFAULT_ENCOUNTER : undefined;
   const user = process.env.FHIRENGINE_OAUTH_DEFAULT_USER ?? (patient ? `Patient/${patient}` : undefined);
-  return { patient, user };
+  return { patient, encounter, user };
 }
 
 export function oauthRoutes(baseUrl: string): Hono {
@@ -38,6 +43,39 @@ export function oauthRoutes(baseUrl: string): Hono {
   const fhirAud = baseUrl; // SMART: the access-token audience is this resource server
 
   app.get("/.well-known/jwks.json", async (c) => c.json(await publicJwks()));
+
+  // OIDC discovery (OpenID Connect Core §4 / Discovery 1.0). Public: relying parties resolve
+  // the id_token's `iss` to this document to find the JWKS — (g)(10) OpenID Connect tests
+  // fetch `<iss>/.well-known/openid-configuration` and verify the id_token against `jwks_uri`.
+  app.get("/.well-known/openid-configuration", (c) => c.json({
+    issuer: iss,
+    authorization_endpoint: `${iss}/oauth/authorize`,
+    token_endpoint: `${iss}/oauth/token`,
+    jwks_uri: `${iss}/.well-known/jwks.json`,
+    response_types_supported: ["code"],
+    subject_types_supported: ["public"],
+    id_token_signing_alg_values_supported: ["RS256"],
+    scopes_supported: ["openid", "fhirUser", "profile", "launch", "launch/patient", "offline_access"],
+    grant_types_supported: ["authorization_code", "refresh_token", "client_credentials"],
+    token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "private_key_jwt"],
+    claims_supported: ["sub", "iss", "aud", "exp", "iat", "fhirUser", "profile", "nonce"],
+  }));
+
+  // SMART style document (SMART §styling): referenced by `smart_style_url` in EHR-launch
+  // token responses so embedded apps can match the EHR's look. Static defaults.
+  app.get("/smart-style.json", (c) => c.json({
+    color_background: "#ffffff",
+    color_error: "#b00020",
+    color_highlight: "#0d6efd",
+    color_modal_backdrop: "",
+    color_success: "#198754",
+    color_text: "#212529",
+    dim_border_radius: "6px",
+    dim_font_size: "14px",
+    dim_spacing_size: "8px",
+    font_family_body: "system-ui, sans-serif",
+    font_family_heading: "system-ui, sans-serif",
+  }));
 
   // --- Authorization endpoint (auto-approve) ---
   app.get("/oauth/authorize", async (c) => {
@@ -85,8 +123,8 @@ export function oauthRoutes(baseUrl: string): Hono {
       if ((p.code_challenge_method ?? "plain") !== "S256") return back({ error: "invalid_request", error_description: "code_challenge_method must be S256" });
     }
     const scope = p.scope ?? "";
-    const { patient, user } = launchContext(scope);
-    const code = putCode({ clientId: clientId!, redirectUri, scope, codeChallenge: p.code_challenge, codeChallengeMethod: p.code_challenge_method, patient, user, nonce: p.nonce });
+    const { patient, encounter, user } = launchContext(scope);
+    const code = putCode({ clientId: clientId!, redirectUri, scope, codeChallenge: p.code_challenge, codeChallengeMethod: p.code_challenge_method, patient, encounter, user, nonce: p.nonce });
     return back({ code });
   });
 
@@ -112,14 +150,21 @@ export function oauthRoutes(baseUrl: string): Hono {
       }
     }
 
-    const issue = async (grant: { scope: string; patient?: string; user?: string; nonce?: string }, withRefresh: boolean) => {
+    const issue = async (grant: { scope: string; patient?: string; encounter?: string; user?: string; nonce?: string }, withRefresh: boolean) => {
       const sub = grant.user ?? (grant.patient ? `Patient/${grant.patient}` : clientId!);
       const access = await signAccessToken({ sub, scope: grant.scope, clientId: clientId!, iss, aud: fhirAud, patient: grant.patient, fhirUser: grant.user });
       const resp: Record<string, unknown> = { access_token: access, token_type: "Bearer", expires_in: 3600, scope: grant.scope };
       if (grant.patient) resp.patient = grant.patient;
+      if (grant.encounter) resp.encounter = grant.encounter;
+      if (/(^|\s)launch(\s|$)/.test(grant.scope)) {
+        // EHR launch context extras ((g)(10) / SMART §launch-context): banner directive +
+        // style document for embedded apps. Headless server → no banner needed.
+        resp.need_patient_banner = false;
+        resp.smart_style_url = `${iss}/smart-style.json`;
+      }
       if (/(^|\s)openid(\s|$)/.test(grant.scope)) resp.id_token = await signIdToken({ sub, iss, clientId: clientId!, fhirUser: grant.user, nonce: grant.nonce });
       if (withRefresh && /(^|\s)offline_access(\s|$)/.test(grant.scope)) {
-        resp.refresh_token = putRefresh({ clientId: clientId!, scope: grant.scope, patient: grant.patient, user: grant.user });
+        resp.refresh_token = putRefresh({ clientId: clientId!, scope: grant.scope, patient: grant.patient, encounter: grant.encounter, user: grant.user });
       }
       return c.json(resp, 200, { "Cache-Control": "no-store", Pragma: "no-cache" });
     };
@@ -132,14 +177,14 @@ export function oauthRoutes(baseUrl: string): Hono {
       if (!verifyPkce(body.get("code_verifier") ?? undefined, codeRec.codeChallenge, codeRec.codeChallengeMethod)) {
         return err("invalid_grant", "PKCE verification failed");
       }
-      return issue({ scope: codeRec.scope, patient: codeRec.patient, user: codeRec.user, nonce: codeRec.nonce }, true);
+      return issue({ scope: codeRec.scope, patient: codeRec.patient, encounter: codeRec.encounter, user: codeRec.user, nonce: codeRec.nonce }, true);
     }
 
     if (grantType === "refresh_token") {
       const g = takeRefresh(body.get("refresh_token") ?? "");
       if (!g || g.clientId !== clientId) return err("invalid_grant", "refresh_token invalid or expired");
       const scope = body.get("scope") ?? g.scope; // may narrow, not widen (not enforced here)
-      return issue({ scope, patient: g.patient, user: g.user }, true);
+      return issue({ scope, patient: g.patient, encounter: g.encounter, user: g.user }, true);
     }
 
     if (grantType === "client_credentials") {

@@ -13,6 +13,7 @@ export interface AuthCode {
   codeChallenge?: string;
   codeChallengeMethod?: string;
   patient?: string;
+  encounter?: string;
   user?: string; // fhirUser reference
   nonce?: string;
   expiresAt: number;
@@ -22,6 +23,7 @@ export interface RefreshGrant {
   clientId: string;
   scope: string;
   patient?: string;
+  encounter?: string;
   user?: string;
   expiresAt: number;
 }

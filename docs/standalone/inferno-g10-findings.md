@@ -483,3 +483,71 @@ certification validator at it was the wrong target; Option B is correct.
 
 **Teardown:** the :3443 TLS instance was stopped; the us_core + G10 suites are back in the working
 **Option B** state. The validator truststore alias (`ronin-tx`) is harmless and left in place.
+
+---
+
+## Run 12 (2026-08-05) — OAuth-gated suites driven end-to-end for the FIRST time
+
+The previously-unproven claim ("SMART auth server + Backend Services exist but aren't yet proven
+end-to-end through the harness") is now substantially proven: (g)(10) groups **1 (Standalone
+Patient App — Full Access), 2 (Limited Access), and 3 (EHR Practitioner App)** all run headlessly
+through the real OAuth dance and **pass everything except the TLS checks** (expected on the
+plain-HTTP local harness, same as prior runs).
+
+**Environment rebuild** (host reboot had corrupted the July state):
+- Kit survives at `~/Documents/Claude/Tools/g10-certification-test-kit` (images + containers intact;
+  validator memory edits still in compose). Inferno's SQLite (`data/inferno_production.db`) and
+  redis AOF (`data/redis`) were reboot-corrupted → moved to `data/corrupt-backup-20260805/`, re-ran
+  `docker compose run --rm inferno bundle exec inferno migrate`, restarted. Old sessions/results lost
+  (they're documented here — acceptable).
+- Delta store rebuilt at `packages/server/.delta-inferno`: US Core 6.1.0 IG installed via
+  `fhirengine-terminology.ts install-ig` (49 profiles / 36 value sets), then 3 fresh Synthea
+  patients + hospital/practitioner bundles loaded as transactions. Sidecar venv now persistent at
+  `packages/server/sidecar/.venv`.
+- Server env for the run: `FHIRENGINE_AUTH_ENABLED=true FHIRENGINE_AUTH_STRATEGY=local
+  FHIRENGINE_OAUTH_ENABLED=true FHIRENGINE_PUBLIC_URL=http://host.docker.internal:3000` +
+  `FHIRENGINE_OAUTH_DEFAULT_PATIENT/_ENCOUNTER/_USER` (Synthea Abbott774 patient, her Encounter,
+  its Practitioner) + `FHIRENGINE_OAUTH_CLIENTS` registering `inferno_standalone` / `inferno_ehr`
+  (confidential symmetric).
+- Headless driver rewritten (session-scratchpad `inferno_driver.py`): create session → run group →
+  on `waiting`, extract the authorize URL from the wait message and walk the redirect chain
+  (fhirEngine auto-approve 302 → Inferno `/custom/smart/redirect`); EHR launches are
+  EHR-initiated by GETting Inferno's launch endpoint with `iss`+`launch`. Driver gotcha that cost a
+  cycle: rewriting `host.docker.internal`→`127.0.0.1` must apply to the request host ONLY — mangling
+  the `aud` query param produces a legitimate server-side aud rejection.
+- Groups must run **in one session** (later groups read earlier groups' outputs); the Limited-App
+  group needs `auth_url`/`token_url` provided inside its `auth_info` input (no discovery subgroup).
+
+**Real server gaps found by the harness — all fixed this run (kept in the product):**
+1. **PKCE `plain` advertised** — SMART v1 spec listed `["S256","plain"]`; (g)(10) requires S256-only.
+2. **Missing SMART context capabilities** — added `context-standalone-patient`, `context-ehr-patient`,
+   `context-ehr-encounter`, `context-banner`, `context-style` across all four SMART version specs.
+3. **No OIDC discovery** — `<iss>/.well-known/openid-configuration` 401'd (didn't exist); the OIDC
+   group resolves the id_token's iss to it. Added (public, pre-gate) with jwks_uri etc.
+4. **No encounter launch context** — token responses now carry `encounter`
+   (`FHIRENGINE_OAUTH_DEFAULT_ENCOUNTER`) threaded through code + refresh grants.
+5. **No EHR launch-context extras** — token responses for `launch`-scope grants now include
+   `need_patient_banner:false` + `smart_style_url`; `/smart-style.json` added.
+
+**Results (session `g8nZra9wLsQ`):**
+| Group | pass | fail | notes |
+|---|---|---|---|
+| 1 Standalone Patient App | 49 | 4 | all 4 fails = TLS (plain-http harness) |
+| 2 Limited Access | 25 | 5 | all fails = TLS; restricted-access tests pass |
+| 3 EHR Practitioner App | 36 | 5 | all fails = TLS; patient+encounter context, banner/style pass |
+
+OpenID Connect, token refresh (with refresh-token rotation), unrestricted + restricted resource
+access, and the full PKCE S256 dance all pass against the real harness.
+
+**Remaining OAuth surface (next session):**
+- **Group 9 Additional Authorization Tests** — needs real server features: an RFC 7662 token
+  introspection endpoint (STU2 requirement), client_assertion (private_key_jwt) verification on the
+  authorization_code grant (currently only enforced for client_credentials — an asymmetric
+  confidential client's assertion is accepted unverified: fix before running 9.12), SMART v1-scope
+  launches, fine-grained/granular scope handling, public-client launch, invalid-aud/token/PKCE
+  negatives (likely already pass), token-revocation attestation.
+- **Groups 7/8 Multi-Patient API** — Backend Services + Bulk `$export` against the harness (register
+  Inferno's bulk client JWKS).
+- **Groups 4/5/6/10/12 Single Patient API** — token-gated US Core CRUD/search (largely proven by the
+  us_core_v610 suite runs; needs validator up).
+- **TLS suite** — needs a TLS deployment in front of the server (deploy/proxy work, not code).
