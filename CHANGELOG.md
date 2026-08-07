@@ -6,6 +6,19 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (Security Labeling Service — ADR-0015 Amendment 2)
+- **The SLS rule engine is live** (`FHIRENGINE_SLS_ENABLED=true`): classification rules label
+  `meta.security` (HCS sensitivity tags + confidentiality) at ingest — every write path
+  (REST, transaction, terminology reconcile) classifies identically via the shared Bronze
+  materializer — activating the already-shipped consent gate / DS4P obligations /
+  `Consent.provision.securityLabel` matching on UNLABELED source data. Rules: exact + prefix
+  code matching per system, `fieldPath` scoping, and `matchValueSet` rules resolved at boot
+  against the local terminology store. Merge per A2.5: source labels preserved,
+  (system, code) dedup, single highest-wins confidentiality. Built-in demonstrative US-realm
+  floor (42 CFR Part 2 / PSY / HIV; `FHIRENGINE_SLS_BASELINE=off` to disable) + operator rule
+  sets via `FHIRENGINE_SLS_RULES`. `fhirengine-sls relabel <Type|--all> [--dry-run]`
+  reclassifies existing stores as append-only new versions (A2.4).
+
 ## [0.1.0-alpha.7] - 2026-08-07
 
 ### Added (CDF-incremental promotion)

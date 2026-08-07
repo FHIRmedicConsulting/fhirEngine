@@ -83,6 +83,9 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_CONSENT_ENFORCEMENT` | off | Read-time consent + DS4P label gate on the delta routes (default policy + stored-`Consent` provision overrides). |
 | `FHIRENGINE_CONSENT_TREAT_SENSITIVE` | off | `true` = user-context reads of sensitivity-tagged resources allowed under a VERIFIED treatment purpose-of-use (TREAT/ETREAT). Shorthand for `{"user":{"sensitivity":"treat"}}`. |
 | `FHIRENGINE_CONSENT_POLICY` | v1 defaults | JSON matrix `{"user":{"restricted":"deny\|allow\|treat","sensitivity":"deny\|allow\|treat"}}`. `V` (Very-Restricted) is never blanket-allowed — only a stored Consent provision releases it. Malformed JSON fails closed to the defaults. |
+| `FHIRENGINE_SLS_ENABLED` | off | Security Labeling Service (ADR-0015 A2): classify + write `meta.security` (HCS sensitivity + confidentiality) at ingest from classification rules, so consent/DS4P enforcement fires on unlabeled source data. `fhirengine-sls relabel` reclassifies existing stores (append-only new versions). |
+| `FHIRENGINE_SLS_RULES` | — | Inline JSON rule array or `@/path/to/rules.json`. Rules: exact/prefix code matching per system, optional `fieldPath` scoping, or `matchValueSet` (resolved once at boot against the local `valueset_expansion` store — VSAC C2S sets). Malformed → baseline only. |
+| `FHIRENGINE_SLS_BASELINE` | on | `off` disables the built-in US-realm demo floor (42 CFR Part 2 ICD-10 prefixes → ETH/SUD+R, mental-health → PSY+R, common HIV codes → HIV+R). **Demonstrative, not clinically exhaustive** — production supplies curated rule sets. |
 
 ## UDAP B2B trust (ADR-0036; opt-in)
 

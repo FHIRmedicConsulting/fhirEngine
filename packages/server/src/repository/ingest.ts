@@ -7,6 +7,7 @@ import type { Resource as FhirResource } from "@fhirengine/fhir-types";
 import type { RawBronzeRow } from "../lib/delta-warehouse.js";
 import type { IdentifierIndexEntry } from "./types.js";
 import { buildSearchIndex } from "./search-index.js";
+import { applySecurityLabels } from "../security/sls.js";
 
 export function extractIdentifiers(resource: FhirResource): IdentifierIndexEntry[] {
   const raw = (resource as { identifier?: unknown }).identifier;
@@ -22,6 +23,10 @@ export function extractIdentifiers(resource: FhirResource): IdentifierIndexEntry
 }
 
 export function bronzeRow(resource: FhirResource, versionId: number, lastUpdatedIso: string, deleted: boolean): RawBronzeRow {
+  // SLS (ADR-0015 A2): classify + label BEFORE materialization so `meta.security` is stored
+  // in the body (Bronze → Gold serve both carry it) and every ingest path — REST writes,
+  // transactions, terminology reconcile — labels identically. No-op unless FHIRENGINE_SLS_ENABLED.
+  applySecurityLabels(resource as unknown as Record<string, unknown>);
   return {
     id: resource.id!,
     version_id: versionId,

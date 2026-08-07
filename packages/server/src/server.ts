@@ -22,6 +22,7 @@ import { loadRegisteredClients } from "./auth/udap/registered-clients.js";
 import type { RateLimitStore } from "./security/rate-limit.js";
 import { RedisRateLimitStore, type RedisEvalClient } from "./security/redis-rate-limit-store.js";
 import { setOAuthStoreBackend } from "./auth/oauth/store.js";
+import { configureSls, slsEnabled } from "./security/sls.js";
 import { RedisOAuthStore, type RedisOAuthClient } from "./auth/oauth/redis-oauth-store.js";
 
 
@@ -92,6 +93,13 @@ async function main(): Promise<void> {
   // Lazy-loads a Redis client so single-node deployments carry no Redis dependency.
   const rateLimitStore = await buildSharedRateLimitStore(log);
   await configureOAuthStore(log);
+
+  // SLS (ADR-0015 A2) — compile classification rules (resolving matchValueSet rules against
+  // the local terminology store) so write-path labeling is sync. Opt-in.
+  if (slsEnabled()) {
+    const n = await configureSls(warehouse);
+    log.info({ rules: n }, "SLS: security labeling enabled");
+  }
 
   const app = createDeltaApp({ warehouse, baseUrl: publicUrl, rateLimitStore });
 

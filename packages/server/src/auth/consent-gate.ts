@@ -36,8 +36,9 @@
  *   policy knobs (`FHIRENGINE_CONSENT_POLICY` / `FHIRENGINE_CONSENT_TREAT_SENSITIVE`)
  *   are evaluated here (see `userPolicy()` for semantics).
  *
- * The gate works correctly when `meta.security` is empty (SLS rule engine
- * not yet running) — empty labels = `Normal` confidentiality = allowed.
+ * Labels are populated at ingest by the SLS rule engine (`security/sls.ts`, ADR-0015 A2 —
+ * opt-in via FHIRENGINE_SLS_ENABLED) and/or supplied by the source system; the gate works
+ * correctly either way — empty labels = `Normal` confidentiality = allowed.
  * That posture is what session 024's SLS-column-NULL state already produces.
  */
 
