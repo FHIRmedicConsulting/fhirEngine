@@ -109,6 +109,23 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
     software: { name: "fhirEngine", version: SOFTWARE_VERSION },
     implementation: { description: "fhirEngine OSS-Delta FHIR R4 server (delta-rs/DataFusion)", url: baseUrl },
     fhirVersion: "4.0.1",
+    // tx-ecosystem feature declarations the HL7 validator's tx client reads
+    // (TerminologyClientContext.checkFeature). CodeSystemAsParameter is TRUE —
+    // $validate-code/$expand/$lookup honor client-supplied CodeSystems/ValueSets
+    // via the tx-resource parameter (tx-resource-overlay). The tx-tests
+    // `test-version` feature is DELIBERATELY absent: it claims the HL7
+    // terminology test battery passes, and it doesn't yet — declare it only
+    // once `validator_cli txTests` is green (until then validator users need
+    // -authorise-non-conformant-tx-servers).
+    extension: [
+      {
+        url: "http://hl7.org/fhir/uv/application-feature/StructureDefinition/feature",
+        extension: [
+          { url: "definition", valueCanonical: "http://hl7.org/fhir/uv/tx-ecosystem/FeatureDefinition/CodeSystemAsParameter" },
+          { url: "value", valueCode: "true" },
+        ],
+      },
+    ],
     ...(instantiatesUsCore ? { instantiates: ["http://hl7.org/fhir/us/core/CapabilityStatement/us-core-server"] } : {}),
     format: ["application/fhir+json"], // JSON only — honest (no XML/ttl); drop the bare "json" shorthand
     rest: [
