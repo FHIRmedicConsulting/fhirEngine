@@ -37,19 +37,13 @@ line coverage.
 
 ## Conformance — Inferno (g)(10)
 > **Honest status:** this is **not** an ONC certification claim — do not say "passes (g)(10)."
-> What's verified: individual **US Core v6.1.0** resource/search/read groups pass; profile
-> `validation_test` passes with external tx suppressed (Option B); and as of **Run 12 (2026-08-05)**
-> the **OAuth-gated app groups run end-to-end**: Standalone Patient App (Full + Limited), EHR
-> Practitioner App, and (Run 13) **Additional Authorization Tests** — public + asymmetric clients,
-> v1 + fine-grained granular scopes, granular scope selection, RFC 7662 token introspection, and the
-> invalid-aud/token/PKCE negatives — and (Run 14) **both Multi-Patient API groups** (Backend
-> Services ES384 private_key_jwt + Group `$export` → authenticated NDJSON downloads, content
-> validated) — and (Run 15) the **Single Patient API US Core 6.1.0 group with auth ON** (200 pass;
-> GET+POST search, must-support, live-validator profile validation; skips = data-absent profiles in
-> the 3-patient set) — all pass everything except the TLS checks (expected on the plain-HTTP local
-> harness). Not yet driven: attestations (group 11), the TLS suite (the server's TLS listener makes
-> a local attempt plausible), and other-US-Core-version Single Patient groups (only if certifying
-> those). Richer test data would convert the Run-15 skips into passes.
+> What IS verified (Runs 12–17, 2026-08-05/06): **every functional (g)(10) group passes with zero
+> test failures over TLS** — Standalone Full/Limited, EHR Practitioner, Additional Authorization
+> (297), Multi-Patient STU1+STU2, Single Patient API US Core 6.1.0 (202) — driven headlessly
+> against the real kit with auth ON over the hardened TLS listener. Attestations carry 3 declared
+> deployment-layer gaps (consent GUI, offline-access notice, public base-URL publication). Before
+> a real ONC attempt: those deployer items, richer test data (data-absent skips), CA-signed certs,
+> certification-grade deployment. Detail: `docs/standalone/inferno-g10-findings.md` Runs 12–17.
 
 Harness stood up (docker g10 kit); server driven headlessly. **Run 9 (2026-07-03) — validator LIVE:**
 fixed the OOM (Docker VM → **12 GB** + validator **`-Xmx8g`**) and the base-URL mismatch (server
