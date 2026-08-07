@@ -21,6 +21,7 @@ import { deltaResourceRoutes } from "./routes/delta-resource.js";
 import { terminologyRoutes } from "./routes/terminology.js";
 import { mountTransaction } from "./routes/transaction.js";
 import { mountMemberMatch } from "./routes/member-match.js";
+import { mountPatientMatch } from "./routes/patient-match.js";
 import { mountPriorAuth } from "./routes/prior-auth.js";
 import { mountCdsHooks } from "./routes/cds-hooks.js";
 import { mountDtr } from "./routes/dtr.js";
@@ -95,6 +96,7 @@ export function createDeltaApp(deps: DeltaAppDeps): Hono {
   mountTransaction(app, deps.warehouse, deps.baseUrl);
   // Da Vinci HRex Patient/$member-match (CMS-0057 Payer-to-Payer) — before the generic routes.
   mountMemberMatch(app, deps.warehouse);
+  mountPatientMatch(app, deps.warehouse);
   // Da Vinci PAS Claim/$submit + $inquire (CMS-0057 Prior Authorization API).
   mountPriorAuth(app, deps.warehouse, deps.baseUrl);
   // Da Vinci CRD — CDS Hooks discovery + coverage-requirements service (CMS-0057).

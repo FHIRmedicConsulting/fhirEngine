@@ -21,6 +21,7 @@ import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 import { flattenResource } from "../fhir-schema/clean-room-flattener.js";
 import { schemaFor } from "../fhir-schema/r4-registry.js";
 import { resolveIdentities, rewriteReferences, type MpiResolution, type MpiPatientRow } from "./mpi.js";
+import { probabilisticCandidates } from "./mpi-probabilistic.js";
 import { uuidv7 } from "../lib/uuid-v7.js";
 import { logSwallowed } from "../lib/log.js";
 
@@ -121,6 +122,12 @@ export async function promote(wh: DeltaWarehouse, resourceType: string, opts?: P
       currentRows = applyPatientMerges(currentRows, mpi);
       await writeMpiTables(wh, mpi, now);
       await writeMergeProvenance(wh, mpi, now);
+    }
+    // Probabilistic MPI (ADR-0012 v2, opt-in FHIRENGINE_MPI_PROBABILISTIC): score demographic
+    // similarity for patients that DON'T share an identifier (deterministic missed them) and
+    // enqueue probable/certain pairs for stewardship — NEVER auto-merged (§3.4 safety floor).
+    if (process.env.FHIRENGINE_MPI_PROBABILISTIC === "true") {
+      await enqueueProbabilisticReviews(wh, mpi, currentRows, now);
     }
   } else if (mpiEnabled() && resourceType !== "Patient") {
     // Dedup enforcement for downstream types: rewrite merged→survivor references so
@@ -387,6 +394,34 @@ async function writeMpiTables(wh: DeltaWarehouse, mpi: MpiResolution, now: strin
       status: "pending", created_at: now,
     })), "append");
   }
+}
+
+/** Enqueue probabilistic duplicate candidates (no shared identifier) into patient_match_review
+ * for stewardship — append only pairs not already queued. Never auto-merges. */
+async function enqueueProbabilisticReviews(wh: DeltaWarehouse, mpi: MpiResolution, currentRows: BronzeRow[], now: string): Promise<void> {
+  // Pairs the deterministic stage already linked (merged or reviewed) — don't re-surface them.
+  const linked = new Set<string>();
+  for (const m of mpi.merges) linked.add([m.survivorId, m.mergedId].sort().join("~"));
+  for (const r of mpi.reviews) for (let i = 0; i < r.ids.length; i++) for (let j = i + 1; j < r.ids.length; j++) linked.add([r.ids[i]!, r.ids[j]!].sort().join("~"));
+
+  const rows = currentRows.filter((r) => !r.deleted).map((r) => ({ id: r.id, body: JSON.parse(r.body_json) as Record<string, unknown> }));
+  const candidates = probabilisticCandidates(rows, linked);
+  if (!candidates.length) return;
+
+  let existing = new Set<string>();
+  try {
+    wh.registerMpi("patient_match_review");
+    const q = await wh.query<{ candidate_ids: string }>("SELECT candidate_ids FROM patient_match_review");
+    existing = new Set(q.map((x) => x.candidate_ids));
+  } catch { /* first run */ }
+
+  const fresh = candidates.filter((c) => !existing.has([...c.ids].sort().join(",")));
+  if (!fresh.length) return;
+  await wh.writeMpi("patient_match_review", fresh.map((c) => ({
+    review_id: uuidv7(), candidate_ids: [...c.ids].sort().join(","), reason: `probabilistic_${c.grade}`,
+    shared_identifiers: "", evidence_json: JSON.stringify({ weight: Number(c.weight.toFixed(3)), probability: Number(c.probability.toFixed(4)) }),
+    suggested_action: "steward_review_probable_match", status: "pending", created_at: now,
+  })), "append");
 }
 
 /** Audit Provenance per auto-merge decision (ADR-0012 §8) — landed in Bronze like any

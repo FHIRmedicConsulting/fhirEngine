@@ -40,6 +40,8 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | Var | Default | Description |
 |---|---|---|
 | `FHIRENGINE_MPI` | on | Deterministic Patient dedup **enforced at promotion** (Bronze→Silver/Gold): duplicates sharing a normalized business identifier merge (survivor = latest write; merged record readable by id with a `replaced-by` link, excluded from search); `Patient/<merged>` references in every promoted type are rewritten to the survivor; `patient_link` / `patient_match_review` / `patient_merge_history` (all Gold) + merge Provenance are maintained. Hard-deny guardrails (§3.4 — SSN conflict, sex mismatch, date-of-death mismatch, multi-match) route to the review queue instead of merging and are **not** disableable. Set `off` to skip dedup entirely. Splink/PPRL (probabilistic) are external-pipeline scope. |
+| `FHIRENGINE_MPI_PROBABILISTIC` | off | ADR-0012 v2 — probabilistic dedup at promotion: Fellegi-Sunter demographic scoring (Jaro-Winkler names, birthDate/gender/postal/phone) finds likely duplicates that DON'T share an identifier and enqueues `probable`/`certain` pairs in `patient_match_review`. **Never auto-merged** (§3.4 safety floor) — stewardship only. `Patient/$match` exposes the same scoring as a client operation (no flag needed). |
+| `FHIRENGINE_MPI_THRESHOLD_CERTAIN` / `_PROBABLE` / `_POSSIBLE` | 12 / 6 / 2 | Match-weight grade cutoffs (summed log2 Fellegi-Sunter weight). Tune per deployment/population. |
 
 ## Security profile & transport (ADR-0031/0032)
 

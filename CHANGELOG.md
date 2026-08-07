@@ -6,6 +6,19 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (probabilistic MPI — ADR-0012 v2)
+- **`POST /Patient/$match`** (FHIR patient-match operation): a seed Patient is scored against
+  stored candidates via **Fellegi-Sunter** record linkage (Jaro-Winkler name similarity,
+  birthDate/gender/postal/phone comparison with curated m/u weights), returning a searchset
+  Bundle graded `certain | probable | possible | certainly-not` with `search.score` and the
+  `match-grade` extension. Candidate generation uses demographic **blocking** (family+birth-year,
+  family+given-initial, dob+postal, phone) so it scores a bounded set, not the whole table.
+- **Probabilistic dedup at promotion** (opt-in `FHIRENGINE_MPI_PROBABILISTIC=true`): the same
+  scoring surfaces likely duplicates that DON'T share a business identifier — the case the
+  deterministic engine can't catch — and enqueues `probable`/`certain` pairs in
+  `patient_match_review`. Probabilistic matches are **never auto-merged** (ADR-0012 §3.4 safety
+  floor); they are stewardship candidates only. Grade thresholds are env-tunable.
+
 ### Added (topic-based Subscriptions — R5 Backport IG)
 - **Topic-based rest-hook subscriptions** (`FHIRENGINE_SUBSCRIPTIONS_ENABLED=true`), built against
   the **Subscriptions R5 Backport IG** (R4 has no native topic subscriptions): a stored `active`
