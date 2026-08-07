@@ -682,3 +682,46 @@ STU1+STU2, Single Patient API US Core 6.1.0 (200), attestations modulo the 3 dep
 Remaining: serve the suite over TLS (server has the listener; validator truststore import from
 Run 11 may still hold) and re-run to clear the TLS checks; optionally other US Core version
 groups; richer data to convert data-absent skips.
+
+---
+
+## Run 17 (2026-08-06) — the TLS finale: full battery over HTTPS, ZERO test failures
+
+Served the entire suite over the server's hardened in-process TLS listener
+(`FHIRENGINE_TLS_CERT/KEY`, min TLS 1.2, NIST cipher suite; self-signed SAN cert for
+`host.docker.internal` on :3443, `FHIRENGINE_PUBLIC_URL=https://host.docker.internal:3443`) and
+re-ran every functional group. **Every previously-failing TLS check now passes; no other
+failures appeared:**
+
+| Group | result over TLS |
+|---|---|
+| 1 Standalone Patient App (Full) | **51 pass / 0 fail** |
+| 2 Standalone (Limited) | **30 pass / 0 fail** |
+| 3 EHR Practitioner App | **38 pass / 0 fail** |
+| 7 Multi-Patient STU1 | **27 pass / 0 fail** |
+| 8 Multi-Patient STU2 | **31 pass / 0 fail** |
+| 9 Additional Authorization | **297 pass / 0 fail** |
+| 10 Single Patient API (US Core 6.1.0) | **202 pass / 0 fail** |
+| 11 Attestations | 11 pass / 3 declared deployment gaps (Run 16) |
+
+TLS-run mechanics (for reproduction):
+- Self-signed cert imported into the **inferno + worker** containers' CA store
+  (`docker cp` → `/usr/local/share/ca-certificates/` → `update-ca-certificates`; Debian bookworm).
+  The Run-11 validator truststore import is separate and only matters for Option-A tx.
+- Driver: host-side fetches use an unverified SSL context; the EHR-launch `iss` must be the
+  **https** base under test (a stale hardcoded http iss silently stalls the wait — Inferno ignores
+  a launch whose iss mismatches the configured url).
+- TLS protocol floor verified directly: TLS 1.1 handshake refused, TLS 1.2 negotiates
+  ECDHE-RSA-AES256-GCM-SHA384.
+- Group 9 still needs the `FHIRENGINE_OAUTH_SCOPE_SUBSTITUTIONS` server (separate boot) —
+  substitutions stay off for the full-access groups.
+
+**Campaign summary (Runs 12–17):** from "OAuth suites never driven" to **every functional (g)(10)
+group passing with zero test failures over TLS** in six runs. Server fixes shipped along the way:
+PKCE S256-only, SMART context capabilities, OIDC discovery, encounter context + banner/style,
+asymmetric client_assertion enforcement (security), RFC 7662 introspection, v1→v2 scope
+normalization, granular scope substitution, bulk `requiresAccessToken`, POST `_search` verb
+mapping, compartment scoping to compartment types (security/correctness), 90-day refresh TTL.
+Remaining before a real ONC attempt: deployer items (consent GUI, offline-access notice, public
+base URLs — Run 16), richer test data to convert data-absent skips, CA-signed certs, and a
+certification-grade deployment topology.
