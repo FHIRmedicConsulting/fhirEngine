@@ -6,6 +6,15 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (consent policy knobs)
+- **Deployment-configurable consent policy** (ADR-0018 §5.2 v1.x — the last consent-gate
+  follow-up): `FHIRENGINE_CONSENT_POLICY` (`{"user":{"restricted","sensitivity"}}` with
+  `deny|allow|treat` actions) and the `FHIRENGINE_CONSENT_TREAT_SENSITIVE=true` shorthand let a
+  deployment permit user-context reads of Restricted/sensitivity-labeled resources — `treat`
+  requires a VERIFIED treatment purpose-of-use claim (TREAT/ETREAT). `V` (Very-Restricted) is
+  never blanket-allowed; only a stored Consent provision releases it. Malformed policy JSON
+  fails closed. Stored-Consent lookup already shipped in `consent-enforce.ts`.
+
 ### Added (external-IdP auth)
 - **The OIDC auth strategy is now wired and complete** (`FHIRENGINE_AUTH_STRATEGY=oidc` +
   `FHIRENGINE_OIDC_DISCOVERY_URL`): RFC 7662 introspection when the IdP advertises it — with

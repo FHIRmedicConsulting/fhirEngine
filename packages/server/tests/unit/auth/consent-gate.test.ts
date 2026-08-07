@@ -15,7 +15,7 @@
  *   - anything else → deny
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   evaluateConsent,
   filterByConsent,
@@ -250,5 +250,60 @@ describe("compartmentPatientIdFor", () => {
 
   it("unknown resourceType → null", () => {
     expect(compartmentPatientIdFor({ resourceType: "Practitioner", id: "p1" })).toBe(null);
+  });
+});
+
+describe("evaluateConsent — deployment policy (v1.x knobs)", () => {
+  const ENV = ["FHIRENGINE_CONSENT_POLICY", "FHIRENGINE_CONSENT_TREAT_SENSITIVE"] as const;
+  const saved: Record<string, string | undefined> = {};
+  beforeEach(() => { for (const k of ENV) { saved[k] = process.env[k]; delete process.env[k]; } });
+  afterEach(() => { for (const k of ENV) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; } });
+
+  const user = (purposeOfUse: string | null = null): AuthContext => ({ ...authFor({ context: "user" }), purposeOfUse });
+  const rRes = labeledResource("Observation", "r1", [{ system: HCS_CONF, code: "R" }]);
+  const vRes = labeledResource("Observation", "v1", [{ system: HCS_CONF, code: "V" }]);
+  const hivRes = labeledResource("Observation", "s1", [{ system: HCS_ACT, code: "HIV" }]);
+  const evalFor = (resource: object, auth: AuthContext) =>
+    evaluateConsent({ resource: resource as never, resourceCompartmentPatientId: "p1", auth });
+
+  it("defaults unchanged: user-context R and sensitivity still deny", () => {
+    expect(evalFor(rRes, user()).allowed).toBe(false);
+    expect(evalFor(hivRes, user("TREAT")).allowed).toBe(false);
+  });
+
+  it("FHIRENGINE_CONSENT_TREAT_SENSITIVE=true allows sensitivity under a treatment POU only", () => {
+    process.env.FHIRENGINE_CONSENT_TREAT_SENSITIVE = "true";
+    expect(evalFor(hivRes, user("TREAT")).allowed).toBe(true);
+    expect(evalFor(hivRes, user("ETREAT")).allowed).toBe(true);
+    expect(evalFor(hivRes, user("HRESCH")).allowed).toBe(false); // research POU → still denied
+    expect(evalFor(hivRes, user(null)).allowed).toBe(false);
+    expect(evalFor(rRes, user("TREAT")).allowed).toBe(false); // R untouched by the shorthand
+  });
+
+  it("FHIRENGINE_CONSENT_POLICY grants restricted under treat / allow per the matrix", () => {
+    process.env.FHIRENGINE_CONSENT_POLICY = JSON.stringify({ user: { restricted: "treat", sensitivity: "allow" } });
+    expect(evalFor(rRes, user("TREAT")).allowed).toBe(true);
+    expect(evalFor(rRes, user(null)).allowed).toBe(false);
+    expect(evalFor(hivRes, user(null)).allowed).toBe(true); // sensitivity: allow — unconditional
+  });
+
+  it("V (Very-Restricted) is NEVER blanket-allowed by policy", () => {
+    process.env.FHIRENGINE_CONSENT_POLICY = JSON.stringify({ user: { restricted: "allow", sensitivity: "allow" } });
+    const d = evalFor(vRes, user("TREAT"));
+    expect(d.allowed).toBe(false);
+    expect(d.blockingLabels).toEqual(["V"]); // stored-Consent override remains the only release path
+  });
+
+  it("malformed policy JSON fails closed to the v1 defaults", () => {
+    process.env.FHIRENGINE_CONSENT_POLICY = "{not json";
+    expect(evalFor(rRes, user("TREAT")).allowed).toBe(false);
+    process.env.FHIRENGINE_CONSENT_POLICY = JSON.stringify({ user: { restricted: "yes-please" } });
+    expect(evalFor(rRes, user("TREAT")).allowed).toBe(false); // unknown action → default deny
+  });
+
+  it("patient-context own-compartment access is unaffected by policy", () => {
+    process.env.FHIRENGINE_CONSENT_POLICY = JSON.stringify({ user: { restricted: "deny", sensitivity: "deny" } });
+    const auth = { ...authFor({ context: "patient", launchPatientId: "p1" }) };
+    expect(evaluateConsent({ resource: vRes as never, resourceCompartmentPatientId: "p1", auth }).allowed).toBe(true);
   });
 });

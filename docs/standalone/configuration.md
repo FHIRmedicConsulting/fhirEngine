@@ -76,6 +76,14 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_OAUTH_REFRESH_TTL_SECONDS` | 7776000 | Refresh-token lifetime (default 90 days; (g)(10) requires ≥3 months for patient apps). |
 | `FHIRENGINE_OAUTH_SCOPE_SUBSTITUTIONS` | — | JSON map of requested scope → granular replacement scopes (headless consent narrowing; see (g)(10) Run 13). |
 
+## Consent gate (ADR-0018 §5; opt-in)
+
+| Var | Default | Description |
+|---|---|---|
+| `FHIRENGINE_CONSENT_ENFORCEMENT` | off | Read-time consent + DS4P label gate on the delta routes (default policy + stored-`Consent` provision overrides). |
+| `FHIRENGINE_CONSENT_TREAT_SENSITIVE` | off | `true` = user-context reads of sensitivity-tagged resources allowed under a VERIFIED treatment purpose-of-use (TREAT/ETREAT). Shorthand for `{"user":{"sensitivity":"treat"}}`. |
+| `FHIRENGINE_CONSENT_POLICY` | v1 defaults | JSON matrix `{"user":{"restricted":"deny\|allow\|treat","sensitivity":"deny\|allow\|treat"}}`. `V` (Very-Restricted) is never blanket-allowed — only a stored Consent provision releases it. Malformed JSON fails closed to the defaults. |
+
 ## UDAP B2B trust (ADR-0036; opt-in)
 
 | Var | Default | Description |

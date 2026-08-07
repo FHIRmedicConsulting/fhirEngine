@@ -19,20 +19,22 @@
  *   - Patient-context where the resource belongs to the launched patient
  *     compartment — always allow (patient owns own data, including sensitive).
  *   - User-context (Practitioner) — allow `Normal` (N) confidentiality;
- *     `Restricted` (R) requires explicit policy-level Consent (v1: deny;
- *     v1.x: check stored Consent records).
+ *     `Restricted` (R) denies unless the deployment policy grants it
+ *     (see `FHIRENGINE_CONSENT_POLICY` below) or a stored Consent provision
+ *     does (consent-enforce override).
  *   - Anything else (anonymous, unauthenticated) — deny.
  *
  * For sensitivity tags (ETH/PSY/HIV/SUD/GDIS) the default is:
  *   - System-context — allow.
  *   - Patient-context (own data) — allow.
- *   - User-context — deny unless `purposeOfUse = TREATMENT` AND deployment
- *     opts in (v1: deny; v1.x: deployment-config opt-in).
+ *   - User-context — deny unless the deployment policy grants it
+ *     (`FHIRENGINE_CONSENT_TREAT_SENSITIVE=true` → allow under a verified
+ *     treatment purpose-of-use) or a stored Consent provision does.
  *
- * v1 ships defaults; v1.x adds:
- *   - Stored `Consent` resource lookup (per-patient policy granularity).
- *   - Deployment-configurable rule overrides.
- *   - Per-purpose-of-use rule matrices.
+ * The v1.x layers are all shipped: stored `Consent` lookup lives in
+ *   `consent-enforce.ts` (the delta-route integration); the deployment
+ *   policy knobs (`FHIRENGINE_CONSENT_POLICY` / `FHIRENGINE_CONSENT_TREAT_SENSITIVE`)
+ *   are evaluated here (see `userPolicy()` for semantics).
  *
  * The gate works correctly when `meta.security` is empty (SLS rule engine
  * not yet running) — empty labels = `Normal` confidentiality = allowed.
@@ -112,6 +114,44 @@ export interface ConsentGateInput {
   auth: AuthContext;
 }
 
+/** Deployment-configurable user-context policy (ADR-0018 §5.2 v1.x knobs).
+ *
+ *   FHIRENGINE_CONSENT_POLICY='{"user":{"restricted":"deny|allow|treat","sensitivity":"deny|allow|treat"}}'
+ *     - "deny"  (default): current v1 behavior — deny; a stored Consent provision may still grant.
+ *     - "treat": allow when the VERIFIED purpose-of-use claim is a treatment code (TREAT/ETREAT).
+ *     - "allow": allow unconditionally (deployment accepts the disclosure risk).
+ *   FHIRENGINE_CONSENT_TREAT_SENSITIVE=true — shorthand for {"user":{"sensitivity":"treat"}}.
+ *
+ * `V` (Very-Restricted) is NEVER blanket-allowed by policy — only a stored Consent provision
+ * (consent-enforce override) can release it. Invalid policy JSON falls back to the defaults
+ * (fail closed, never fail open).
+ */
+type PolicyAction = "deny" | "allow" | "treat";
+const TREATMENT_POU = new Set(["TREAT", "ETREAT", "TREATMENT"]); // v3 ActReason treatment codes
+
+function userPolicy(): { restricted: PolicyAction; sensitivity: PolicyAction } {
+  const dflt: { restricted: PolicyAction; sensitivity: PolicyAction } = {
+    restricted: "deny",
+    sensitivity: process.env.FHIRENGINE_CONSENT_TREAT_SENSITIVE === "true" ? "treat" : "deny",
+  };
+  const raw = process.env.FHIRENGINE_CONSENT_POLICY;
+  if (!raw) return dflt;
+  try {
+    const user = (JSON.parse(raw) as { user?: Record<string, unknown> }).user ?? {};
+    const pick = (v: unknown, fallback: PolicyAction): PolicyAction =>
+      v === "deny" || v === "allow" || v === "treat" ? v : fallback;
+    return { restricted: pick(user.restricted, dflt.restricted), sensitivity: pick(user.sensitivity, dflt.sensitivity) };
+  } catch {
+    return dflt; // malformed policy → v1 defaults (fail closed)
+  }
+}
+
+function policyAllows(action: PolicyAction, purposeOfUse: string | null): boolean {
+  if (action === "allow") return true;
+  if (action === "treat") return purposeOfUse !== null && TREATMENT_POU.has(purposeOfUse);
+  return false;
+}
+
 const ALLOW = (reason: string): ConsentDecision => ({ allowed: true, reason });
 const DENY = (reason: string, blockingLabels: string[] = []): ConsentDecision => ({
   allowed: false,
@@ -160,18 +200,23 @@ export function evaluateConsent(input: ConsentGateInput): ConsentDecision {
     );
   }
 
-  // 4. User-context (Practitioner) — confidentiality + sensitivity gating.
+  // 4. User-context (Practitioner) — confidentiality + sensitivity gating,
+  //    modulated by the deployment policy (V is never blanket-allowed).
   if (scopeContext === "user") {
-    // Restricted or Very-Restricted confidentiality blocked by default.
+    const pol = userPolicy();
     if (confidentiality === "R" || confidentiality === "V") {
+      if (confidentiality === "R" && policyAllows(pol.restricted, auth.purposeOfUse)) {
+        return ALLOW(`user-context: R-confidentiality permitted by deployment policy (${pol.restricted}${pol.restricted === "treat" ? `, purposeOfUse=${auth.purposeOfUse}` : ""})`);
+      }
       return DENY(
         `user-context scope cannot read ${confidentiality}-confidentiality resource without explicit Consent`,
         [confidentiality],
       );
     }
-    // Sensitivity tag blocked by default unless treatment PPOU + deployment
-    // opt-in (v1: always deny when sensitivity tag present).
     if (sensitivityTags.length > 0) {
+      if (policyAllows(pol.sensitivity, auth.purposeOfUse)) {
+        return ALLOW(`user-context: sensitivity (${sensitivityTags.join(", ")}) permitted by deployment policy (${pol.sensitivity}${pol.sensitivity === "treat" ? `, purposeOfUse=${auth.purposeOfUse}` : ""})`);
+      }
       return DENY(
         `user-context scope cannot read sensitive resource (tags: ${sensitivityTags.join(", ")}) without explicit Consent`,
         sensitivityTags,
