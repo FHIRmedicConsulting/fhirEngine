@@ -2,7 +2,7 @@
  * in-memory CodeSystem/ValueSet evaluation, compose filters, cache-id sessions,
  * and the terminology routes consulting the overlay before the Delta store. */
 import { describe, it, expect } from "vitest";
-import { TxOverlay, overlayFor } from "../../src/terminology/tx-resource-overlay.js";
+import { TxOverlay, overlayFor, emptyVersionParams } from "../../src/terminology/tx-resource-overlay.js";
 import { terminologyRoutes } from "../../src/routes/terminology.js";
 
 const CS = {
@@ -53,9 +53,12 @@ function loaded(): TxOverlay {
   return o;
 }
 
+const vp = emptyVersionParams;
+const flatCodes = (r: any) => r.valueSet.expansion.contains.map((c: any) => c.code);
+
 describe("TxOverlay expansion", () => {
   it("expands include-all with abstract/inactive flags, total, and used-codesystem", () => {
-    const r = loaded().expand(VS_ALL, {});
+    const r = loaded().expand(VS_ALL, { excludeNested: true });
     expect(r.valueSet.expansion.total).toBe(6);
     const byCode = Object.fromEntries(r.valueSet.expansion.contains.map((c: any) => [c.code, c]));
     expect(byCode.parent.abstract).toBe(true);
@@ -66,26 +69,34 @@ describe("TxOverlay expansion", () => {
     expect(r.valueSet.url).toBe(VS_ALL.url); // echoes the source ValueSet
   });
 
+  it("nests contains by concept hierarchy unless excludeNested", () => {
+    const r = loaded().expand(VS_ALL, {});
+    expect(r.valueSet.expansion.total).toBe(6); // total counts nested nodes
+    const roots = r.valueSet.expansion.contains;
+    expect(roots.map((c: any) => c.code)).toEqual(["parent", "retired1", "other"]);
+    const parent = roots[0];
+    expect(parent.contains.map((c: any) => c.code)).toEqual(["child1", "child2"]);
+    expect(parent.contains[1].contains[0].code).toBe("grandchild");
+  });
+
   it("enumerated include keeps order and display overrides", () => {
-    const r = loaded().expand(VS_ENUM, {});
-    expect(r.valueSet.expansion.contains.map((c: any) => c.code)).toEqual(["child1", "other"]);
+    const r = loaded().expand(VS_ENUM, { excludeNested: true });
+    expect(flatCodes(r)).toEqual(["child1", "other"]);
     expect(r.valueSet.expansion.contains[1].display).toBe("Overridden");
   });
 
   it("is-a filter selects self + descendants; exclude subtracts; activeOnly drops inactive", () => {
     const overlay = loaded();
-    const isa = overlay.expand(VS_ISA, {});
-    expect(isa.valueSet.expansion.contains.map((c: any) => c.code).sort()).toEqual(
-      ["child1", "child2", "grandchild", "parent"],
-    );
-    const excl = overlay.expand(VS_EXCLUDE, {});
-    expect(excl.valueSet.expansion.contains.map((c: any) => c.code)).not.toContain("other");
-    const active = overlay.expand(VS_ALL, { activeOnly: true });
-    expect(active.valueSet.expansion.contains.map((c: any) => c.code)).not.toContain("retired1");
+    const isa = overlay.expand(VS_ISA, { excludeNested: true });
+    expect(flatCodes(isa).sort()).toEqual(["child1", "child2", "grandchild", "parent"]);
+    const excl = overlay.expand(VS_EXCLUDE, { excludeNested: true });
+    expect(flatCodes(excl)).not.toContain("other");
+    const active = overlay.expand(VS_ALL, { excludeNested: true, activeOnly: true });
+    expect(flatCodes(active)).not.toContain("retired1");
   });
 
   it("pages with count/offset while total stays the full count", () => {
-    const r = loaded().expand(VS_ALL, { count: 2, offset: 2 });
+    const r = loaded().expand(VS_ALL, { excludeNested: true, count: 2, offset: 2 });
     expect(r.valueSet.expansion.total).toBe(6);
     expect(r.valueSet.expansion.contains.length).toBe(2);
     expect(r.valueSet.expansion.offset).toBe(2);
@@ -94,7 +105,7 @@ describe("TxOverlay expansion", () => {
   it("cannot expand a ValueSet over a system it was not given", () => {
     const overlay = new TxOverlay();
     overlay.register(VS_ALL); // no CodeSystem supplied
-    expect(overlay.expand(VS_ALL, {}).error).toContain("cannot be expanded");
+    expect(overlay.expand(VS_ALL, {}).error?.kind).toBe("not-expandable");
   });
 
   it("circular ValueSet imports error instead of recursing forever (big-circle)", () => {
@@ -104,14 +115,17 @@ describe("TxOverlay expansion", () => {
       compose: { include: [{ valueSet: ["http://example.org/test/vs-a"] }] } };
     const overlay = new TxOverlay();
     overlay.register(a); overlay.register(b); overlay.register(CS);
-    expect(overlay.expand(a, {}).error).toContain("cannot be expanded");
-    expect(overlay.validate(a.url, { system: CS.url, code: "child1" })).toBeNull();
+    expect(overlay.expand(a, {}).error?.kind).toBe("not-expandable");
+    expect(overlay.validateRich(a, { system: CS.url, code: "child1" }, vp())?.result).toBe(false);
   });
 
-  it("catastrophic-backtracking regex filters are refused, not evaluated (ReDoS)", () => {
+  it("catastrophic-backtracking regex filters evaluate safely, never spin (ReDoS)", () => {
     const evilCs = {
       resourceType: "CodeSystem", url: "http://example.org/test/cs-redos", content: "complete",
-      concept: [{ code: "a".repeat(56) + "Y", display: "regex bomb subject" }],
+      concept: [
+        { code: "a".repeat(56) + "Y", display: "regex bomb subject" },
+        { code: "a".repeat(56), display: "all-a run" },
+      ],
     };
     const evilVs = {
       resourceType: "ValueSet", url: "http://example.org/test/vs-redos",
@@ -120,17 +134,19 @@ describe("TxOverlay expansion", () => {
     const overlay = new TxOverlay();
     overlay.register(evilCs); overlay.register(evilVs);
     const started = Date.now();
-    const r = overlay.expand(evilVs, {});
+    const r = overlay.expand(evilVs, { excludeNested: true });
     expect(Date.now() - started).toBeLessThan(1000); // must not spin
-    expect(r.error).toContain("cannot be expanded");
+    // the nested-quantifier pattern is decided without backtracking: the pure
+    // "a"-run matches, the one with the trailing Y does not
+    expect(flatCodes(r)).toEqual(["a".repeat(56)]);
     // Sane regex filters still work.
     const okVs = {
       resourceType: "ValueSet", url: "http://example.org/test/vs-regex-ok",
       compose: { include: [{ system: CS.url, filter: [{ property: "code", op: "regex", value: "child[0-9]+" }] }] },
     };
     overlay.register(CS); overlay.register(okVs);
-    const ok = overlay.expand(okVs, {});
-    expect(ok.valueSet.expansion.contains.map((c: any) => c.code).sort()).toEqual(["child1", "child2"]);
+    const ok = overlay.expand(okVs, { excludeNested: true });
+    expect(flatCodes(ok).sort()).toEqual(["child1", "child2"]);
   });
 
   it("diamond imports (shared non-circular dependency) still expand", () => {
@@ -150,22 +166,27 @@ describe("TxOverlay expansion", () => {
 
 describe("TxOverlay validation", () => {
   it("valid code in VS: display + version from the supplied CodeSystem", () => {
-    const r = loaded().validate(VS_ALL.url, { system: CS.url, code: "child1" });
-    expect(r).toMatchObject({ status: "valid", display: "Child One", version: "0.1.0" });
+    const o = loaded();
+    const r = o.validateRich(o.valueSet(VS_ALL.url), { system: CS.url, code: "child1" }, vp());
+    expect(r).toMatchObject({ result: true, display: "Child One", version: "0.1.0" });
   });
 
   it("unknown code in a known system: invalid-code (not merely not-in-vs)", () => {
-    const r = loaded().validate(VS_ALL.url, { system: CS.url, code: "nope" });
-    expect(r?.status).toBe("invalid-code");
+    const o = loaded();
+    const r = o.validateRich(o.valueSet(VS_ALL.url), { system: CS.url, code: "nope" }, vp());
+    expect(r?.result).toBe(false);
+    expect(r?.issues.map((i) => i.txType)).toContain("invalid-code");
   });
 
   it("known code outside the VS: not-in-vs", () => {
-    const r = loaded().validate(VS_ENUM.url, { system: CS.url, code: "grandchild" });
-    expect(r?.status).toBe("not-in-vs");
+    const o = loaded();
+    const r = o.validateRich(o.valueSet(VS_ENUM.url), { system: CS.url, code: "grandchild" }, vp());
+    expect(r?.result).toBe(false);
+    expect(r?.issues.map((i) => i.txType)).toContain("not-in-vs");
   });
 
-  it("returns null (fall back to store) for a VS the overlay does not know", () => {
-    expect(loaded().validate("http://example.org/unknown", { system: CS.url, code: "child1" })).toBeNull();
+  it("a VS the overlay does not know resolves to undefined (route falls back to the store)", () => {
+    expect(loaded().valueSet("http://example.org/unknown")).toBeUndefined();
   });
 });
 
@@ -174,7 +195,7 @@ describe("cache-id sessions", () => {
     const id = `session-${Date.now()}`;
     overlayFor(id, [CS, VS_ALL]);
     const later = overlayFor(id, []);
-    expect(later.validate(VS_ALL.url, { system: CS.url, code: "child1" })?.status).toBe("valid");
+    expect(later.validateRich(later.valueSet(VS_ALL.url), { system: CS.url, code: "child1" }, vp())?.result).toBe(true);
   });
 
   it("no cache-id → request-scoped only", () => {
@@ -219,9 +240,9 @@ describe("terminology routes with tx-resource (no Delta store needed)", () => {
       { name: "tx-resource", resource: VS_ALL },
     ]);
     expect(val(body.parameter, "result").valueBoolean).toBe(false);
-    const issue = val(body.parameter, "issues").resource.issue[0];
-    expect(issue.details.coding[0].system).toBe("http://hl7.org/fhir/tools/CodeSystem/tx-issue-type");
-    expect(issue.details.coding[0].code).toBe("invalid-code");
+    const codes = val(body.parameter, "issues").resource.issue.map((i: any) => i.details.coding[0].code);
+    expect(codes).toContain("invalid-code");
+    expect(codes).toContain("not-in-vs");
   });
 
   it("$expand answers from tx-resources", async () => {

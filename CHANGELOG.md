@@ -6,6 +6,35 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (terminology)
+- **tx-ecosystem version semantics** — the HL7 terminology-battery burn-down continues
+  (91 → **409 of 597** passing): multi-version CodeSystems under one canonical url,
+  ValueSet include version pins (exact + `x`-wildcards), `system-version` /
+  `check-system-version` / `force-system-version` parameters, and tx.fhir.org's exact
+  error contract on `$validate-code` (message-id extensions, tx-issue-type codings,
+  per-input `location`/`expression` paths, `x-caused-by-unknown-system` vs
+  `x-unknown-system`, CodeableConcept aggregate errors). New `terminology/tx-version.ts`;
+  `tx-resource-overlay.ts` largely rewritten.
+- **$expand contract** — hierarchical `contains` (honoring `excludeNested`),
+  `includeDesignations`, `property` echoes (+ `expansion.property` declarations),
+  identity-only ValueSet echo, per-version `used-codesystem`, version-parameter echoes,
+  supplement CodeSystems kept out of regular version resolution.
+- **Display + status validation** — display checking against displays/designations
+  (whitespace-variant message, `lenient-display-validation`), fragment CodeSystems
+  (unknown code → warning, result true), inactive-concept semantics
+  (`compose.inactive=false` rejection trio + `inactive` response parameter).
+- **R4 + R5 tx discovery** — `$versions` now advertises 4.0.1 and 5.0.0 (default 5.0.0)
+  so ecosystem clients speak R5 to the tx endpoints (R4 model round-trips silently drop
+  R5 expansion fields); `TerminologyCapabilities` is now valid in both R4 and R5
+  (dropped `codeSearch`, no empty arrays).
+
+### Fixed (terminology)
+- Catastrophic-backtracking regex filters (`(a+)+` family) are decided by a
+  backtracking-free matcher instead of being refused (the battery expects success).
+- Unknown ValueSets return 4xx OperationOutcomes on `$validate-code`/`$expand` when the
+  request carries client-supplied terminology; a missing terminology store no longer
+  500s `$validate-code` fallbacks.
+
 ## [0.1.0-alpha.8] - 2026-08-07
 
 ### Added (tooling)

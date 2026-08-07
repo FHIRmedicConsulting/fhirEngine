@@ -143,9 +143,44 @@ metadata declarations; (3) burn down remaining suites from the report diffs;
 battery version that passes). Until then `-authorise-non-conformant-tx-servers`
 is the sanctioned workaround.
 
-**Progress (2026-08-06):**
+**Progress (2026-08-07): 409 of 597 passing (was 91).** The version suite
+(206 tests) is essentially done (205/206); big remaining clusters: language
+(22+15), validation (24), permutations (~20), overload (~19), parameters (~17),
+deprecated (11), extensions (11), default-valueset-version (8). Key landings:
+- ✅ **Version-pinning semantics** (`src/terminology/tx-version.ts` + overlay
+  rewrite): multi-version CodeSystems under one url, ValueSet include pins
+  (exact + `x`-wildcards), `system-version` / `check-system-version` /
+  `force-system-version` parameters, and the exact tx.fhir.org error contract
+  (VALUESET_VALUE_MISMATCH[_DEFAULT|_CHANGED], UNKNOWN_CODESYSTEM_VERSION[_NONE],
+  VALUESET_VERSION_CHECK, message-id extensions, per-input location/expression
+  paths, x-caused-by-unknown-system vs x-unknown-system).
+- ✅ **Battery-shaped $validate-code renderer**: alphabetical Parameters,
+  message = sorted error texts joined `"; "`, codeableConcept echo + the CC
+  aggregate contract (TX_GENERAL_CC wrapper, demoted informational
+  this-code-not-in-vs, code/system echoes dropped), display validation
+  (+ `lenient-display-validation`), fragment CodeSystems (warning, result
+  true), inactive semantics (`compose.inactive=false` trio + `inactive` param).
+- ✅ **Expansion contract**: hierarchical contains (excludeNested=false),
+  designations (`includeDesignations`), property echoes (`property` param +
+  status ride-along + expansion.property declarations), identity-only ValueSet
+  echo (no compose/id/date/publisher), filter/version-param echoes,
+  used-codesystem per resolved version, contains.version only for
+  multi-version expansions, supplement CodeSystems quarantined out of the
+  regular version list.
+- ✅ **R5 discovery**: `$versions` now offers 4.0.1 + 5.0.0 with 5.0.0 default.
+  This was load-bearing: TxTester round-trips responses through the model of
+  the server's default version, and R4 has no `expansion.contains.property`
+  etc., so R4 mode silently drops fields the battery then reports missing.
+- ✅ ReDoS regex filters are now *decided* (safe literal-run matcher for
+  nested-quantifier patterns) instead of refused — the battery expects 2xx.
+- ✅ 4xx OperationOutcomes for unknown ValueSets (validate + expand) when the
+  request carries client-supplied terminology.
+- ⏳ Remaining: displayLanguage/designation language selection (language
+  suites), supplements in $lookup/$validate, batch validation endpoint,
+  metadata feature-flag extensions, deprecated/extensions suites, big-echo
+  limits, default-valueset-version pinning params, misc response-shape diffs.
 - ✅ `GET|POST /$versions` implemented (validator's connect probe now detects
-  "Server version 4.0.1 from $versions").
+  the server from $versions).
 - ✅ `tx-resource` overlay implemented (`src/terminology/tx-resource-overlay.ts`):
   client-supplied CodeSystems/ValueSets evaluated in-memory for
   $validate-code/$expand/$lookup, with compose include/exclude/imports, filters

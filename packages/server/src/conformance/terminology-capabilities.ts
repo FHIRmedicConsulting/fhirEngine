@@ -33,9 +33,11 @@ export async function buildTerminologyCapabilities(
     kind: "instance",
     software: { name: "fhirEngine", version: SOFTWARE_VERSION },
     implementation: { description: "fhirEngine local terminology server (delta-rs/DataFusion)", url: baseUrl },
-    codeSearch: "all",
-    codeSystem: systems.map((uri) => ({ uri })),
-    expansion: { hierarchical: false, paging: true },
+    // codeSearch is omitted: its value set diverges between R4 (explicit|all)
+    // and R5 (in-compose|…), and both R4 and R5 clients parse this statement.
+    // Empty arrays are invalid FHIR JSON — only emit codeSystem when non-empty.
+    ...(systems.length ? { codeSystem: systems.map((uri) => ({ uri })) } : {}),
+    expansion: { hierarchical: true, paging: true },
     validateCode: { translations: false },
   };
 }

@@ -100,8 +100,12 @@ describe.skipIf(!SIDECAR)("terminology operation endpoints", () => {
     const { status, body } = await get(`/$versions?_format=json`);
     expect(status).toBe(200);
     expect(body.resourceType).toBe("Parameters");
-    expect(val(body.parameter, "version").valueCode).toBe("4.0.1");
+    // Both R4 (the REST tier) and R5 (the tx battery's native version — R4
+    // round-trips drop R5 expansion fields) are offered; R5 is the default so
+    // tx-ecosystem clients speak R5 to the terminology endpoints.
+    const versions = body.parameter.filter((p: any) => p.name === "version").map((p: any) => p.valueCode);
+    expect(versions).toEqual(expect.arrayContaining(["4.0.1", "5.0.0"]));
     // Ecosystem clients (TxTester/validator) read `default` as valueString.
-    expect(val(body.parameter, "default").valueString).toBe("4.0.1");
+    expect(val(body.parameter, "default").valueString).toBe("5.0.0");
   });
 });
