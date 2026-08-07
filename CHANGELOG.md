@@ -6,6 +6,19 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (topic-based Subscriptions — R5 Backport IG)
+- **Topic-based rest-hook subscriptions** (`FHIRENGINE_SUBSCRIPTIONS_ENABLED=true`), built against
+  the **Subscriptions R5 Backport IG** (R4 has no native topic subscriptions): a stored `active`
+  Subscription whose topic (`Subscription.criteria` canonical) + `backport-filter-criteria` match a
+  written resource gets its rest-hook endpoint POSTed a backport notification Bundle (history type,
+  SubscriptionStatus Parameters first entry, per-`backport-payload-content` empty/id-only/full-resource
+  entries). Handshake on activation (`requested`→`active`, persisted back); per-subscription event
+  counter; `Subscription/:id/$status` operation; supported topics advertised in the
+  CapabilityStatement. Delivery is SSRF-guarded and fire-and-forget (never blocks or fails the
+  triggering write). Built-in per-type topics (`<base>/SubscriptionTopic/<Type>`) work with no config;
+  operator topics via `FHIRENGINE_SUBSCRIPTION_TOPICS`. Single-node dispatch (multi-node fan-out is a
+  documented follow-up).
+
 ### Added (Security Labeling Service — ADR-0015 Amendment 2)
 - **The SLS rule engine is live** (`FHIRENGINE_SLS_ENABLED=true`): classification rules label
   `meta.security` (HCS sensitivity tags + confidentiality) at ingest — every write path

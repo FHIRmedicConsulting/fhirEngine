@@ -24,6 +24,8 @@ import type { AuthContext } from "../auth/auth-context.js";
 import { validateResource, type ValidationResult } from "../validation/validation-chain.js";
 import { badRequest, forbidden, notFound, preconditionFailed, unprocessable } from "../lib/errors.js";
 import type { OperationOutcome, Resource as FhirResource } from "@fhirengine/fhir-types";
+import { getDispatcher } from "../subscriptions/dispatcher.js";
+import { STATUS_PROFILE as SUBSCRIPTION_STATUS_PROFILE } from "../subscriptions/notification.js";
 
 /** Reject anything that isn't one of the 146 R4 Core resource types. */
 function assertR4Core(resourceType: string): void {
@@ -365,6 +367,29 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     }
     return { conds, idIn };
   };
+
+  // GET|POST /Subscription/:id/$status — Subscriptions R5 Backport IG operation. Returns a
+  // SubscriptionStatus (as a Bundle-wrapped Parameters, type=query-status shape) with the
+  // subscription's current status + events-since-start. No-op-safe when subscriptions are off.
+  const subStatus = async (c: any) => {
+    const id = c.req.param("id");
+    const sub = await repo("Subscription").read(id); // 404/410 if missing
+    const d = getDispatcher();
+    const params: Array<Record<string, unknown>> = [
+      { name: "subscription", valueReference: { reference: `${baseUrl}/Subscription/${id}` } },
+      { name: "topic", valueCanonical: (sub as any).criteria },
+      { name: "status", valueCode: (sub as any).status ?? "off" },
+      { name: "type", valueCode: "query-status" },
+      { name: "events-since-subscription-start", valueString: String(d?.eventCount(id) ?? 0) },
+    ];
+    const statusParams = { resourceType: "Parameters", meta: { profile: [SUBSCRIPTION_STATUS_PROFILE] }, parameter: params };
+    return c.json({
+      resourceType: "Bundle", type: "history",
+      entry: [{ resource: statusParams, request: { method: "GET", url: `Subscription/${id}/$status` } }],
+    }, 200);
+  };
+  app.get("/Subscription/:id/$status", subStatus);
+  app.post("/Subscription/:id/$status", subStatus);
 
   // POST /$validate  (system-level — resourceType from the body)
   app.post("/$validate", async (c) => {

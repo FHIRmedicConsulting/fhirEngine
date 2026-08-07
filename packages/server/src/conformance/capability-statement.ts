@@ -12,6 +12,8 @@ import { r4CoreResourceTypes } from "../fhir-schema/r4-registry.js";
 import { searchParamsFor } from "../fhir-schema/r4-search-params.js";
 import { listInstalledProfiles } from "./ig-loader.js";
 import { smartSecurityBlock } from "./smart-configuration.js";
+import { subscriptionsEnabled } from "../subscriptions/dispatcher.js";
+import { knownTopicCanonicals } from "../subscriptions/topics.js";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 
 const SOFTWARE_VERSION = "0.1.0-alpha.7";
@@ -140,6 +142,18 @@ export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: stri
         operation: [
           { name: "validate", definition: "http://hl7.org/fhir/OperationDefinition/Resource-validate" },
           { name: "export", definition: "http://hl7.org/fhir/uv/bulkdata/OperationDefinition/export" }, // system-level Bulk Data
+          // Subscriptions R5 Backport IG: advertise supported SubscriptionTopic canonicals via
+          // the capabilitystatement-subscriptiontopic-canonical extension (only when enabled).
+          ...(subscriptionsEnabled() ? [{
+            // Operator-named topics enumerated; the built-in per-type pattern
+            // (<base>/SubscriptionTopic/<ResourceType>) is generic and documented, not enumerated.
+            extension: knownTopicCanonicals([]).map((url) => ({
+              url: "http://hl7.org/fhir/uv/subscriptions-backport/StructureDefinition/capabilitystatement-subscriptiontopic-canonical",
+              valueCanonical: url,
+            })),
+            name: "backport-subscription-status",
+            definition: "http://hl7.org/fhir/uv/subscriptions-backport/OperationDefinition/backport-subscription-status",
+          }] : []),
         ],
       },
     ],

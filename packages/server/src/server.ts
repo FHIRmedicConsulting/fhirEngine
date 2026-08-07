@@ -23,6 +23,8 @@ import type { RateLimitStore } from "./security/rate-limit.js";
 import { RedisRateLimitStore, type RedisEvalClient } from "./security/redis-rate-limit-store.js";
 import { setOAuthStoreBackend } from "./auth/oauth/store.js";
 import { configureSls, slsEnabled } from "./security/sls.js";
+import { SubscriptionDispatcher, setDispatcher, subscriptionsEnabled } from "./subscriptions/dispatcher.js";
+import { configureTopics } from "./subscriptions/topics.js";
 import { RedisOAuthStore, type RedisOAuthClient } from "./auth/oauth/redis-oauth-store.js";
 
 
@@ -99,6 +101,16 @@ async function main(): Promise<void> {
   if (slsEnabled()) {
     const n = await configureSls(warehouse);
     log.info({ rules: n }, "SLS: security labeling enabled");
+  }
+
+  // Topic-based subscriptions (R5 Backport IG) — opt-in. Register topics, load the active
+  // subscription set, and wire the process-wide dispatcher the write path emits into.
+  if (subscriptionsEnabled()) {
+    configureTopics(publicUrl);
+    const dispatcher = new SubscriptionDispatcher(warehouse, publicUrl);
+    setDispatcher(dispatcher);
+    const n = await dispatcher.loadActive();
+    log.info({ active: n }, "subscriptions: topic-based rest-hook enabled");
   }
 
   const app = createDeltaApp({ warehouse, baseUrl: publicUrl, rateLimitStore });

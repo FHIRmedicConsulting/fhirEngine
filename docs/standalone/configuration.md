@@ -87,6 +87,16 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_SLS_RULES` | — | Inline JSON rule array or `@/path/to/rules.json`. Rules: exact/prefix code matching per system, optional `fieldPath` scoping, or `matchValueSet` (resolved once at boot against the local `valueset_expansion` store — VSAC C2S sets). Malformed → baseline only. |
 | `FHIRENGINE_SLS_BASELINE` | on | `off` disables the built-in US-realm demo floor (42 CFR Part 2 ICD-10 prefixes → ETH/SUD+R, mental-health → PSY+R, common HIV codes → HIV+R). **Demonstrative, not clinically exhaustive** — production supplies curated rule sets. |
 
+## Subscriptions (R5 Backport IG; opt-in)
+
+FHIR R4 has no native topic-based subscriptions — these follow the **Subscriptions R5 Backport IG**
+(`Subscription.criteria` = a SubscriptionTopic canonical, filter/payload/channel via extensions).
+
+| Var | Default | Description |
+|---|---|---|
+| `FHIRENGINE_SUBSCRIPTIONS_ENABLED` | off | Topic-based **rest-hook** subscriptions: a stored `active` Subscription's endpoint is POSTed a backport notification Bundle when a matching resource is created/updated/deleted. Handshake on activation (`requested`→`active`); SSRF-guarded delivery; `Subscription/:id/$status` operation. |
+| `FHIRENGINE_SUBSCRIPTION_TOPICS` | built-in | JSON `[{url, resourceTypes[], interactions?[]}]` of operator SubscriptionTopics. Without it, a built-in per-type topic `<baseUrl>/SubscriptionTopic/<ResourceType>` fires on any change to that type. Filter criteria (`backport-filter-criteria` = FHIR search syntax) narrow within a topic; payload content (`empty`/`id-only`/`full-resource`) set per Subscription. Single-node dispatch (multi-node fan-out is a follow-up). |
+
 ## UDAP B2B trust (ADR-0036; opt-in)
 
 | Var | Default | Description |

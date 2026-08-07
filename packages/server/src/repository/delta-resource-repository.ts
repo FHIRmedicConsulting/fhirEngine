@@ -20,6 +20,7 @@ import { validateResource } from "../validation/validation-chain.js";
 import { bronzeRow } from "./ingest.js";
 import { quarantineOnUnknown } from "../lib/config.js";
 import { kickReconcile } from "../terminology/reconcile.js";
+import { emitResourceChange } from "../subscriptions/dispatcher.js";
 
 export interface SearchCondition {
   code: string;
@@ -435,6 +436,14 @@ export class DeltaResourceRepository {
       this.resourceType,
       bronzeRow(resource, versionId, now.toISOString(), deleted),
       versionId > 1 ? versionId - 1 : null,
+    );
+
+    // Topic-based subscription notifications (R5 Backport IG) — fire-and-forget, never blocks
+    // or fails the write. No-op unless FHIRENGINE_SUBSCRIPTIONS_ENABLED wired a dispatcher.
+    emitResourceChange(
+      this.resourceType,
+      resource as unknown as Record<string, unknown>,
+      deleted ? "delete" : versionId > 1 ? "update" : "create",
     );
   }
 
