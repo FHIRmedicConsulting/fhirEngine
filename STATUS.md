@@ -44,9 +44,12 @@ line coverage.
 > v1 + fine-grained granular scopes, granular scope selection, RFC 7662 token introspection, and the
 > invalid-aud/token/PKCE negatives — and (Run 14) **both Multi-Patient API groups** (Backend
 > Services ES384 private_key_jwt + Group `$export` → authenticated NDJSON downloads, content
-> validated) — all pass everything except the TLS checks (expected on the plain-HTTP local
-> harness). Not yet driven: the Single Patient API groups, attestations, and the TLS suite (the
-> server's TLS listener makes a local attempt plausible).
+> validated) — and (Run 15) the **Single Patient API US Core 6.1.0 group with auth ON** (200 pass;
+> GET+POST search, must-support, live-validator profile validation; skips = data-absent profiles in
+> the 3-patient set) — all pass everything except the TLS checks (expected on the plain-HTTP local
+> harness). Not yet driven: attestations (group 11), the TLS suite (the server's TLS listener makes
+> a local attempt plausible), and other-US-Core-version Single Patient groups (only if certifying
+> those). Richer test data would convert the Run-15 skips into passes.
 
 Harness stood up (docker g10 kit); server driven headlessly. **Run 9 (2026-07-03) — validator LIVE:**
 fixed the OOM (Docker VM → **12 GB** + validator **`-Xmx8g`**) and the base-URL mismatch (server

@@ -623,3 +623,35 @@ types in the 3-patient Synthea set.
 **Remaining for full (g)(10):** Single Patient API groups (validator-dependent), Visual
 Inspection attestations, TLS suite (the server's hardened TLS listener from Run 11 makes a local
 attempt plausible — next candidate).
+
+---
+
+## Run 15 (2026-08-06) — Single Patient API US Core 6.1.0 (group 10): 200 pass, zero non-TLS fails
+
+The token-gated US Core 6.1.0 API group — reads, GET+POST searches, must-support, reference
+resolution, and profile validation via the live HL7 validator — passes with auth ON:
+**200 pass / 161 skip / 3 fail (all TLS)**. Skips are data-absent US Core profiles in the
+3-patient Synthea set (Goal, RelatedPerson, SDOH assessments, …) — enrich the dataset before a
+real certification attempt to convert skips into passes.
+
+**Two real access-control defects found (auth-on searches had never been driven before):**
+1. **POST `/Type/_search` was scope-checked as a CREATE.** The middleware's generic POST→`c`
+   verb mapping denied conformant POST-search clients holding read/search scopes with 403
+   (FHIR §3.1.1.1 requires both search forms; Inferno exercises both). Now maps to `s`.
+2. **The patient-compartment filter was applied to non-compartment types.** Practitioner,
+   Organization, Medication, Location carry no patient reference, so `WHERE patient_id = ?`
+   could never match — patient-context reads of referenced providers 404'd and
+   `_include=MedicationRequest:medication` came back empty. Per CompartmentDefinition/patient,
+   such types are not compartment-restricted; the filter now applies only to compartment types,
+   `Patient` itself, and the `Resource` pseudo-type (preserving the $export population gate).
+
+**Data addition:** one US-Core-lab Observation (`Observation/019fda0b-e780-73e7-8e0f-fdf61eebd71b`)
+demonstrating BOTH DataAbsentReason forms — `dataAbsentReason` coding (DAR CodeSystem) and the DAR
+extension on an absent `effectiveDateTime` primitive — satisfying the (g)(10) DAR tests, which
+scan the session's returned resources.
+
+**Token note:** the group consumes a pre-minted access token via `smart_auth_info`
+(`access_token`/`refresh_token`/`issue_time` filled in the auth_info input) — no launch waits.
+
+**Remaining for full (g)(10):** groups 4/5/6/12 (other US Core versions — only if certifying
+those), Visual Inspection attestations (group 11), TLS suite.

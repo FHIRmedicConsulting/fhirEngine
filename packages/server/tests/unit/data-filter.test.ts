@@ -86,6 +86,27 @@ describe("buildDataFilter", () => {
     expect(df.patientCompartmentId).toBeNull();
   });
 
+  it("does NOT compartment-filter supporting types outside the patient compartment", () => {
+    // Practitioner/Organization/Medication/Location carry no patient reference — a patient_id
+    // filter can never match them, so a patient app's reads of referenced providers would 404.
+    for (const rt of ["Practitioner", "Organization", "Medication", "Location"]) {
+      const df = buildDataFilter(auth([scope("patient", "*", ["r", "s"])], "pat-42"), rt, "r");
+      expect(df.patientCompartmentId, rt).toBeNull();
+    }
+  });
+
+  it("keeps the compartment filter for Patient itself and compartment types", () => {
+    for (const rt of ["Patient", "Observation", "Condition"]) {
+      const df = buildDataFilter(auth([scope("patient", "*", ["r", "s"])], "pat-42"), rt, "r");
+      expect(df.patientCompartmentId, rt).toBe("pat-42");
+    }
+  });
+
+  it("keeps the compartment filter for the Resource pseudo-type ($export population gate)", () => {
+    const df = buildDataFilter(auth([scope("patient", "*", ["r", "s"])], "pat-42"), "Resource", "s");
+    expect(df.patientCompartmentId).toBe("pat-42");
+  });
+
   it("restriction values are copied per key, not shared across keys", () => {
     const a = auth([
       scope("system", "Observation", ["s"], { category: "laboratory" }),

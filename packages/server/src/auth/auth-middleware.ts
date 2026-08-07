@@ -101,7 +101,11 @@ export function authMiddleware(options: AuthMiddlewareOptions): MiddlewareHandle
     }
 
     const hasResourceId = segments.length > 1 && segments[1]!.length > 0;
-    const verb = verbForRequest(c.req.method, hasResourceId);
+    // POST /Type/_search is a SEARCH, not a create (FHIR §3.1.1.1; US Core requires both
+    // search forms) — mapping it through the generic POST→create rule denied conformant
+    // clients holding read/search-only scopes with a 403.
+    const isPostSearch = c.req.method === "POST" && segments[1] === "_search";
+    const verb = isPostSearch ? "s" : verbForRequest(c.req.method, hasResourceId);
 
     const enforcement = enforce({ resourceType, verb, auth });
     if (!enforcement.authorized) {

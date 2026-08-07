@@ -14,6 +14,7 @@
 import type { AuthContext } from "./auth-context.js";
 import { enforce, type RequestVerb } from "./scope-enforcer.js";
 import { forbidden } from "../lib/errors.js";
+import { patientCompartment } from "../fhir-schema/patient-compartment.js";
 
 export interface DataFilter {
   /** Patient compartment scope; null = no compartment filter. */
@@ -39,8 +40,16 @@ export function buildDataFilter(
   for (const [k, values] of Object.entries(result.queryRestrictions)) {
     restrictions[k] = Array.from(values).sort();
   }
+  // Compartment filtering only applies to types that ARE in the patient compartment
+  // (CompartmentDefinition/patient). Supporting resources a patient app must still read —
+  // Practitioner, Organization, Location, Medication — carry no patient reference, so a
+  // patient_id filter can never match them: applying it turned every such read/search/_include
+  // into a 404/empty for patient-context tokens ((g)(10) Single Patient API failures).
+  // "Patient" itself is the compartment root and stays filtered to the launch patient.
+  const compartmentApplies = resourceType === "Patient" || resourceType === "Resource"
+    || resourceType in patientCompartment;
   return {
-    patientCompartmentId: result.patientCompartmentFilter,
+    patientCompartmentId: compartmentApplies ? result.patientCompartmentFilter : null,
     queryRestrictions: restrictions,
   };
 }
