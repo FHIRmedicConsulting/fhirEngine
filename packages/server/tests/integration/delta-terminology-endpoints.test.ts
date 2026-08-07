@@ -95,4 +95,13 @@ describe.skipIf(!SIDECAR)("terminology operation endpoints", () => {
     const vs = meta.rest[0].resource.find((r: any) => r.type === "ValueSet");
     expect(vs.operation.map((o: any) => o.name)).toEqual(expect.arrayContaining(["expand", "validate-code"]));
   });
+
+  it("$versions reports the supported FHIR versions (tx client connect probe)", async () => {
+    const { status, body } = await get(`/$versions?_format=json`);
+    expect(status).toBe(200);
+    expect(body.resourceType).toBe("Parameters");
+    expect(val(body.parameter, "version").valueCode).toBe("4.0.1");
+    // Ecosystem clients (TxTester/validator) read `default` as valueString.
+    expect(val(body.parameter, "default").valueString).toBe("4.0.1");
+  });
 });

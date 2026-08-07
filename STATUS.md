@@ -36,11 +36,15 @@ line coverage.
 | CapabilityStatement | ✅ US Core `supportedProfile` + `instantiates`, JSON-only `format`, SMART `oauth-uris`, terminology ops, `TerminologyCapabilities` (`?mode=terminology`) |
 
 ## Conformance — Inferno (g)(10)
-> **Honest status:** the full (g)(10) suite has **NOT** been run start-to-finish with the SMART App
-> Launch / OAuth-gated flows. What's verified: individual **US Core v6.1.0** resource/search/read
-> groups pass, and profile `validation_test` passes with external tx suppressed (Option B). This is
-> **not** an ONC certification claim — do not say "passes (g)(10)." SMART auth server + Backend
-> Services exist but aren't yet proven end-to-end through the harness.
+> **Honest status:** this is **not** an ONC certification claim — do not say "passes (g)(10)."
+> What's verified: individual **US Core v6.1.0** resource/search/read groups pass; profile
+> `validation_test` passes with external tx suppressed (Option B); and as of **Run 12 (2026-08-05)**
+> the **OAuth-gated app groups run end-to-end**: Standalone Patient App (Full + Limited), EHR
+> Practitioner App, and (Run 13) **Additional Authorization Tests** — public + asymmetric clients,
+> v1 + fine-grained granular scopes, granular scope selection, RFC 7662 token introspection, and the
+> invalid-aud/token/PKCE negatives — all pass everything except the TLS checks (expected on the
+> plain-HTTP local harness). Not yet driven: Multi-Patient/Bulk against the harness, the Single
+> Patient API groups, attestations, and the TLS suite (needs a TLS deployment).
 
 Harness stood up (docker g10 kit); server driven headlessly. **Run 9 (2026-07-03) — validator LIVE:**
 fixed the OOM (Docker VM → **12 GB** + validator **`-Xmx8g`**) and the base-URL mismatch (server

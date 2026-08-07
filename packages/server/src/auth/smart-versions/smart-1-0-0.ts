@@ -23,6 +23,11 @@ export const SmartV1_0_0: SmartVersionSpec = {
     "client-public",
     "client-confidential-symmetric",
     "sso-openid-connect",
+    "context-standalone-patient",
+    "context-ehr-patient",
+    "context-ehr-encounter",
+    "context-banner",
+    "context-style",
     "permission-patient",
     "permission-user",
     "permission-online",
@@ -48,7 +53,7 @@ export const SmartV1_0_0: SmartVersionSpec = {
   ],
   responseTypesSupported: ["code"],
   grantTypesSupported: ["authorization_code", "refresh_token"],
-  pkceMethodsSupported: ["S256", "plain"],
+  pkceMethodsSupported: ["S256"], // (g)(10): `plain` must not be advertised
   pkceRequiredForPublicClients: false, // PKCE recommended but not mandatory in v1
   acceptsLegacyScopeGrammar: true,
   acceptsV2ScopeGrammar: false,

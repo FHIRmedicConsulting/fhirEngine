@@ -35,6 +35,7 @@ export function buildSmartConfiguration(baseUrl: string): Record<string, unknown
   return {
     authorization_endpoint: authorize,
     token_endpoint: token,
+    introspection_endpoint: `${baseUrl}/oauth/introspect`,
     token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post", "private_key_jwt"],
     token_endpoint_auth_signing_alg_values_supported: ["RS256", "ES384"],
     grant_types_supported: reg.unionGrantTypes(),

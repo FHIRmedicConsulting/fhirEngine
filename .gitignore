@@ -27,7 +27,10 @@ sct2_*.txt
 der2_*.txt
 
 # --- Python sidecar venv ---
-sidecar/.venv/
+**/sidecar/.venv/
 **/__pycache__/
+
+# --- Claude Code machine-local settings ---
+.claude/settings.local.json
 
 coverage/
