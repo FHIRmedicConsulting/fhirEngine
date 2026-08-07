@@ -54,18 +54,23 @@ describe.skipIf(!SIDECAR)("search completeness", () => {
     expect((await r.json()).total).toBe(1); // just the match, no crash
   });
 
-  it("unsupported params (composite/unknown) are lenient-ignored by default, 400 under Prefer: handling=strict", async () => {
+  it("unknown params are lenient-ignored by default, 400 under Prefer: handling=strict; registered composites + multi-sort now apply", async () => {
     const strictHdr = { headers: { Prefer: "handling=strict" } };
-    // Composite param (not applied by this engine): lenient ignores it, strict rejects it.
-    const compLenient = await get(`/Observation?_id=${O}&code-value-quantity=${encodeURIComponent("http://ex|c$5")}`);
-    expect(compLenient.status).toBe(200); // FHIR default lenient: ignore, don't silently mislead-then-500
-    const compStrict = await app.fetch(new Request(`http://test/Observation?_id=${O}&code-value-quantity=x`, strictHdr));
-    expect(compStrict.status).toBe(400);
-    const oo = await compStrict.json();
+    // Registered composite params are APPLIED now (same-element index rows) — accepted under strict.
+    const compStrict = await app.fetch(new Request(`http://test/Observation?_id=${O}&code-value-quantity=${encodeURIComponent("http://ex|c$5")}`, strictHdr));
+    expect(compStrict.status).toBe(200);
+    // Unknown params: lenient ignores, strict rejects with an OperationOutcome naming the param.
+    const unkLenient = await get(`/Observation?_id=${O}&not-a-param=x`);
+    expect(unkLenient.status).toBe(200); // FHIR default lenient: ignore, don't silently mislead-then-500
+    const unkStrict = await app.fetch(new Request(`http://test/Observation?_id=${O}&not-a-param=x`, strictHdr));
+    expect(unkStrict.status).toBe(400);
+    const oo = await unkStrict.json();
     expect(oo.resourceType).toBe("OperationOutcome");
-    expect(JSON.stringify(oo)).toMatch(/code-value-quantity/);
-    // Multi-field _sort: only the first field is applied → 400 under strict so the client knows.
-    const sortStrict = await app.fetch(new Request(`http://test/Observation?_id=${O}&_sort=status,value-quantity`, strictHdr));
-    expect(sortStrict.status).toBe(400);
+    expect(JSON.stringify(oo)).toMatch(/not-a-param/);
+    // Multi-field _sort is applied now; only UNKNOWN sort fields are strict-rejected.
+    const sortOk = await app.fetch(new Request(`http://test/Observation?_id=${O}&_sort=status,value-quantity`, strictHdr));
+    expect(sortOk.status).toBe(200);
+    const sortBad = await app.fetch(new Request(`http://test/Observation?_id=${O}&_sort=status,nope`, strictHdr));
+    expect(sortBad.status).toBe(400);
   });
 });

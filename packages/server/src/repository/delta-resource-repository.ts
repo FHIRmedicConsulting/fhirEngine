@@ -29,6 +29,16 @@ export interface SearchCondition {
   valueIn?: string[]; // reference IN-list (chaining); empty = matches nothing
   system?: string;
   modifier?: string; // exact | contains | not | missing
+  /** Composite conds only: component-2's type (quantity/token/string/date). `system` carries
+   * component-1's token as given (`sys|code` or bare code — both row encodings exist). */
+  comp2Type?: string;
+}
+
+/** One `_sort` field: an indexed search-param key (numeric → DOUBLE cast) or last_updated. */
+export interface SortField {
+  param?: string; // search-param code; undefined = _lastUpdated
+  desc: boolean;
+  numeric?: boolean;
 }
 
 /** Build an index predicate referencing the unnested `t.s` struct (code/value/system). */
@@ -40,6 +50,23 @@ function buildIndexPred(c: SearchCondition): { sql: string; args: unknown[] } {
     return { sql: `(t.s.code = ? AND t.s.value IN (${ph}))`, args: [c.code, ...c.valueIn] };
   }
   switch (c.type) {
+    case "composite": {
+      // Same-element composite rows: system = component-1 token (both `sys|code` and bare-code
+      // encodings exist, so the client's form matches directly); value = component-2 value.
+      const sys = c.system ?? c.value;
+      switch (c.comp2Type) {
+        case "quantity":
+        case "number":
+          return { sql: `(t.s.code = ? AND t.s.system = ? AND TRY_CAST(t.s.value AS DOUBLE) ${c.op ?? "="} ?)`, args: [c.code, sys, Number(c.value)] };
+        case "date":
+          if (c.op === "sw") return { sql: `(t.s.code = ? AND t.s.system = ? AND t.s.value LIKE ?)`, args: [c.code, sys, `${c.value}%`] };
+          return { sql: `(t.s.code = ? AND t.s.system = ? AND t.s.value ${c.op ?? "="} ?)`, args: [c.code, sys, c.value] };
+        case "string":
+          return { sql: `(t.s.code = ? AND t.s.system = ? AND t.s.value LIKE ?)`, args: [c.code, sys, `${c.value.toLowerCase().replace(/[%_]/g, "")}%`] };
+        default: // token component-2
+          return { sql: `(t.s.code = ? AND t.s.system = ? AND t.s.value = ?)`, args: [c.code, sys, c.value] };
+      }
+    }
     case "string": {
       const v = c.value.toLowerCase();
       if (c.modifier === "exact") return { sql: `(t.s.code = ? AND t.s.value = ?)`, args: [c.code, v] };
@@ -223,9 +250,8 @@ export class DeltaResourceRepository {
     lastUpdated?: Array<{ op: string; value: string }>;
     count: number;
     offset: number;
-    sortDesc?: boolean;
-    sortParam?: string; // search-param code to sort by (else last_updated)
-    sortNumeric?: boolean; // cast the sort key to DOUBLE (number/quantity) so 10 > 9
+    /** `_sort` fields in order; each an indexed param key or last_updated. Default: -_lastUpdated. */
+    sort?: SortField[];
   }): Promise<{ resources: FhirResource[]; total: number }> {
     if (!(await this.wh.serveTableReady(this.resourceType))) return { resources: [], total: 0 };
     if (opts.idIn && opts.idIn.length === 0) return { resources: [], total: 0 };
@@ -267,30 +293,35 @@ export class DeltaResourceRepository {
     }
 
     const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
-    const dir = opts.sortDesc === false ? "ASC" : "DESC";
     const totalRows = await this.wh.query<{ n: number }>(`WITH ${cur} SELECT count(*) AS n FROM cur ${where}`, [...baseArgs, ...clauseArgs]);
     const total = Number(totalRows[0]?.n ?? 0);
     const lim = Math.max(0, Math.min(Math.trunc(opts.count), 1000));
     const off = Math.max(0, Math.trunc(opts.offset));
 
-    // _sort by an indexed param → join a per-id sort key (min value for that code); else last_updated.
-    let withClause = `WITH ${cur}`;
+    // _sort: each indexed-param field joins its own per-id sort-key CTE (min value for that
+    // code; numeric fields CAST so 10 > 9); _lastUpdated fields order on the base column.
+    // ORDER BY chains the fields in request order.
+    const sorts: SortField[] = opts.sort?.length ? opts.sort : [{ desc: true }];
+    const sortCtes: string[] = [];
+    const sortArgs: unknown[] = [];
     let from = "cur";
-    // `, cur.id` is a deterministic tiebreaker so LIMIT/OFFSET paging is STABLE — bulk-loaded
+    const orderParts: string[] = [];
+    sorts.forEach((s, i) => {
+      const sdir = s.desc ? "DESC" : "ASC";
+      if (!s.param) { orderParts.push(`cur.last_updated ${sdir}`); return; }
+      const alias = `sortk${i}`;
+      const keyExpr = s.numeric ? "min(TRY_CAST(s.value AS DOUBLE))" : "min(s.value)";
+      sortCtes.push(`${alias} AS (SELECT id, ${keyExpr} AS sv FROM ${unnested} WHERE t.s.code = ? GROUP BY id)`);
+      sortArgs.push(s.param);
+      from += ` LEFT JOIN ${alias} ON cur.id = ${alias}.id`;
+      orderParts.push(`${alias}.sv ${sdir}`);
+    });
+    // `cur.id` is a deterministic tiebreaker so LIMIT/OFFSET paging is STABLE — bulk-loaded
     // resources routinely share a last_updated (or sort key), and without it DataFusion may
     // order ties differently between page requests → the same row on two pages / skipped rows.
-    let orderBy = `last_updated ${dir}, cur.id ${dir}`;
-    const pageArgs: unknown[] = [...baseArgs];
-    if (opts.sortParam) {
-      // Numeric/quantity → min over the CAST values (TRY_CAST tolerates non-numeric index rows),
-      // else min over the string values (ISO dates/strings sort lexically).
-      const keyExpr = opts.sortNumeric ? "min(TRY_CAST(s.value AS DOUBLE))" : "min(s.value)";
-      withClause = `WITH ${cur}, sortk AS (SELECT id, ${keyExpr} AS sv FROM ${unnested} WHERE t.s.code = ? GROUP BY id)`;
-      pageArgs.push(opts.sortParam); // sortk CTE arg, after cur's baseArgs
-      from = "cur LEFT JOIN sortk ON cur.id = sortk.id";
-      orderBy = `sortk.sv ${dir}, cur.id ${dir}`;
-    }
-    pageArgs.push(...clauseArgs);
+    const orderBy = `${orderParts.join(", ")}, cur.id ${sorts[0]!.desc ? "DESC" : "ASC"}`;
+    const withClause = sortCtes.length ? `WITH ${cur}, ${sortCtes.join(", ")}` : `WITH ${cur}`;
+    const pageArgs: unknown[] = [...baseArgs, ...sortArgs, ...clauseArgs];
     const rows = await this.wh.query<{ body_json: string }>(
       `${withClause} SELECT cur.body_json, cur.last_updated FROM ${from} ${where} ORDER BY ${orderBy} LIMIT ${lim} OFFSET ${off}`,
       pageArgs,

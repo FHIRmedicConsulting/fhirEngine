@@ -92,7 +92,9 @@ function buildConds(rt: string, queries: Record<string, string[]>): SearchCondit
     const def = searchParam(rt, code!);
     if (!def) continue; // unsupported param for this type → ignored (lenient)
     for (const v of values) {
-      const cond = condFor(code!, def.type, modifier, v);
+      const cond = def.type === "composite" && def.components
+        ? compositeCondFor(code!, def.components[1]!.type, v)
+        : condFor(code!, def.type, modifier, v);
       if (cond) conds.push(cond);
     }
   }
@@ -131,10 +133,32 @@ function unsupportedSearchParams(rt: string, queries: Record<string, string[]>, 
     const [code, modifier] = key.split(":");
     const def = searchParam(rt, code!);
     if (!def) { if (strict) bad.push(code!); continue; }
-    if (!HANDLEABLE_PARAM_TYPES.has(def.type)) bad.push(`${code} (${def.type})`);
+    if (def.type === "composite") {
+      // Registered composites (with components) are served from same-element index rows;
+      // composite params without a component spec remain honestly unsupported.
+      if (!def.components) bad.push(`${code} (composite)`);
+    }
+    else if (!HANDLEABLE_PARAM_TYPES.has(def.type)) bad.push(`${code} (${def.type})`);
     else if (strict && modifier && UNSUPPORTED_TOKEN_MODIFIERS.has(modifier)) bad.push(`${code}:${modifier}`);
   }
   return bad;
+}
+
+/** Composite value: `component1$component2` (FHIR §3.1.1.4.9). Component 1 is a token
+ * (`sys|code` or bare code — matched against the index row's system column, which stores both
+ * encodings); component 2 follows its own type's grammar (prefixes for quantity/date). */
+function compositeCondFor(code: string, comp2Type: string, v: string): SearchCondition | null {
+  const dollar = v.indexOf("$");
+  if (dollar <= 0 || dollar === v.length - 1) return null; // both components required
+  const comp1 = v.slice(0, dollar).trim();
+  const comp2raw = v.slice(dollar + 1).trim();
+  if (comp2Type === "quantity" || comp2Type === "date") {
+    const d = parseRangeParam(comp2Type === "quantity" ? comp2raw.split("|")[0]! : comp2raw);
+    if (!d) return null;
+    const op = comp2Type === "quantity" && d.op === "sw" ? "=" : d.op;
+    return { code, type: "composite", comp2Type, system: comp1, op, value: d.value };
+  }
+  return { code, type: "composite", comp2Type, system: comp1, value: comp2Type === "string" ? comp2raw.toLowerCase() : comp2raw };
 }
 
 function condFor(code: string, type: string, modifier: string | undefined, v: string): SearchCondition | null {
@@ -629,23 +653,27 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
   const runSearch = async (c: any, rt: string, sp: URLSearchParams) => {
     const count = clampInt(sp.get("_count") ?? undefined, 50);
     const offset = clampInt(sp.get("_getpagesoffset") ?? undefined, 0);
-    // _sort: only the first field is applied. Numeric/quantity sorts cast so 10 > 9.
-    const sortFields = (sp.get("_sort") ?? "").split(",").filter(Boolean);
-    const sortRaw = (sp.get("_sort") ?? "-_lastUpdated").split(",")[0]!;
-    const sortDesc = sortRaw.startsWith("-");
-    const sortField = sortRaw.replace(/^-/, "");
-    const sortDef = sortField !== "_lastUpdated" ? searchParam(rt, sortField) : undefined;
-    const sortParam = sortDef ? sortField : undefined;
-    const sortNumeric = sortDef?.type === "number" || sortDef?.type === "quantity";
+    // _sort: every comma-separated field is applied in order (multi-key ORDER BY). Numeric/
+    // quantity fields cast so 10 > 9; unknown fields fall back to _lastUpdated (strict rejects).
+    const sortFields = (sp.get("_sort") ?? "-_lastUpdated").split(",").map((s) => s.trim()).filter(Boolean);
+    const unknownSorts: string[] = [];
+    const sort = sortFields.map((raw) => {
+      const desc = raw.startsWith("-");
+      const field = raw.replace(/^-/, "");
+      if (field === "_lastUpdated") return { desc };
+      const def = searchParam(rt, field);
+      if (!def || def.type === "composite") { unknownSorts.push(field); return { desc }; }
+      return { param: field, desc, numeric: def.type === "number" || def.type === "quantity" };
+    });
 
     // Unified search: per-resource conditions + chaining/_has + base-column filters.
     const queries = recordOf(sp);
 
     // Reject search params we cannot apply rather than silently returning a broader (wrong) set:
-    // composite/special params always; unknown params + multi-field _sort under Prefer:handling=strict.
+    // unregistered composite/special params always; unknown params/sort fields under strict.
     const strict = /(^|[,\s])handling=strict/.test(c.req.header("Prefer") ?? "");
     const unsupported = unsupportedSearchParams(rt, queries, strict);
-    if (strict && sortFields.length > 1) unsupported.push("_sort (only the first field is applied)");
+    if (strict) unsupported.push(...unknownSorts.map((f) => `_sort=${f} (not an indexed search param)`));
     if (unsupported.length) throw badRequest(`Unsupported search parameter(s): ${unsupported.join(", ")}`, unsupported);
 
     const { conds: chainConds, idIn } = await resolveChainsAndHas(rt, queries);
@@ -668,7 +696,7 @@ export function deltaResourceRoutes(wh: DeltaWarehouse, baseUrl: string): Hono {
     let resources: FhirResource[];
     let total: number;
     {
-      const r = await repo(rt).searchByParams({ conds, id: sp.get("_id") ?? undefined, idIn: effIdIn, lastUpdated, count, offset, sortDesc, sortParam, sortNumeric });
+      const r = await repo(rt).searchByParams({ conds, id: sp.get("_id") ?? undefined, idIn: effIdIn, lastUpdated, count, offset, sort });
       resources = r.resources;
       total = r.total;
     }

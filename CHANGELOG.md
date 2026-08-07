@@ -6,6 +6,17 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (search completeness)
+- **Composite search parameters** for Observation (`code-value-quantity|concept|date|string` +
+  `combo-`/`component-` variants) with true **same-element semantics**: composite pairs are
+  materialized as index rows at write time (component-1 token in the system column — both
+  `sys|code` and bare-code encodings — component-2 value in the value column), so
+  `component-code-value-quantity=8462-4$gt100` cannot borrow a value from a sibling component.
+  Registered composites are accepted under strict handling; unregistered ones remain rejected.
+- **Multi-field `_sort`** — every comma-separated field is applied as a chained ORDER BY (each
+  indexed param joins its own per-id sort-key CTE; numeric fields cast so 10 > 9; `_lastUpdated`
+  orders on the base column). Unknown sort fields are strict-rejected, lenient-ignored otherwise.
+
 ## [0.1.0-alpha.5] - 2026-08-05
 
 ### Testing (coverage-audit closure)

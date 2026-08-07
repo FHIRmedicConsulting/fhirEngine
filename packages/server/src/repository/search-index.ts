@@ -17,6 +17,10 @@ export function buildSearchIndex(resource: Record<string, unknown>): SearchIndex
   const params = searchParamsFor(String(resource.resourceType));
   const out: SearchIndexEntry[] = [];
   for (const [code, def] of Object.entries(params)) {
+    if (def.type === "composite") {
+      if (def.components) compositeRows(code, def, resource, out);
+      continue;
+    }
     let results: unknown[];
     try {
       results = fhirpath.evaluate(resource as any, def.expression, undefined, fhirpathR4Model) as unknown[];
@@ -24,6 +28,90 @@ export function buildSearchIndex(resource: Record<string, unknown>): SearchIndex
       continue; // expression needs resolve()/model or is unevaluable → skip this param
     }
     for (const r of results) extract(code, def.type, r, out);
+  }
+  return out;
+}
+
+/** Resolve a component expression under the restricted grammar (`prop`, `prop.as(Type)`, unions
+ * with `|`) against one base element. `value.as(Quantity)` → element.valueQuantity, etc. */
+function componentValues(el: Record<string, unknown>, expr: string): unknown[] {
+  const out: unknown[] = [];
+  for (const part of expr.split("|").map((s) => s.trim()).filter(Boolean)) {
+    const path = part.replace(/(\w+)\.as\((\w+)\)/g, (_, p: string, t: string) => p + t[0]!.toUpperCase() + t.slice(1));
+    let cur: unknown = el;
+    for (const seg of path.split(".")) {
+      if (cur == null || typeof cur !== "object") { cur = undefined; break; }
+      cur = (cur as Record<string, unknown>)[seg];
+    }
+    if (cur !== undefined && cur !== null) out.push(...(Array.isArray(cur) ? cur : [cur]));
+  }
+  return out;
+}
+
+/** Materialize a composite param as same-element rows: system = component-1 token (canonical
+ * `sys|code` AND bare `code` encodings), value = component-2 value. Same-element correctness
+ * comes from pairing components within each base element, which flat per-param rows lose. */
+function compositeRows(code: string, def: { expression: string; components?: Array<{ expression: string; type: string }> }, resource: Record<string, unknown>, out: SearchIndexEntry[]): void {
+  const [c1, c2] = def.components!;
+  if (!c1 || !c2) return;
+  const rt = String(resource.resourceType);
+  const bases: unknown[] = [];
+  for (const part of def.expression.split("|").map((s) => s.trim()).filter(Boolean)) {
+    if (part === rt) bases.push(resource);
+    else if (part.startsWith(`${rt}.`)) bases.push(...componentValues(resource, part.slice(rt.length + 1)));
+  }
+  for (const el of bases) {
+    if (!el || typeof el !== "object") continue;
+    const tokens = codingsOf(componentValues(el as Record<string, unknown>, c1.expression));
+    const values = compositeComp2(componentValues(el as Record<string, unknown>, c2.expression), c2.type);
+    for (const t of tokens) {
+      for (const v of values) {
+        if (t.system) out.push({ code, system: `${t.system}|${t.code}`, value: v });
+        out.push({ code, system: t.code, value: v });
+      }
+    }
+  }
+}
+
+/** Flatten component-1 results (CodeableConcept / Coding / bare code) to {system?, code} pairs. */
+function codingsOf(results: unknown[]): Array<{ system?: string; code: string }> {
+  const out: Array<{ system?: string; code: string }> = [];
+  for (const r of results) {
+    if (typeof r === "string") { out.push({ code: r }); continue; }
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, any>;
+    if (Array.isArray(o.coding)) {
+      for (const c of o.coding) if (c?.code) out.push({ system: c.system, code: String(c.code) });
+    } else if (o.code !== undefined) {
+      out.push({ system: o.system, code: String(o.code) });
+    }
+  }
+  return out;
+}
+
+/** Component-2 values by type: quantity → numeric string; token → codes (bare + `sys|code`);
+ * string → lowercased; date → every instant (dateTime or Period bounds). */
+function compositeComp2(results: unknown[], type: string): string[] {
+  const out: string[] = [];
+  for (const r of results) {
+    switch (type) {
+      case "quantity":
+        if (typeof r === "number" || typeof r === "string") out.push(String(r));
+        else if (r && typeof r === "object" && (r as any).value !== undefined) out.push(String((r as any).value));
+        break;
+      case "token":
+        for (const t of codingsOf([r])) {
+          out.push(t.code);
+          if (t.system) out.push(`${t.system}|${t.code}`);
+        }
+        break;
+      case "string":
+        if (typeof r === "string") out.push(r.toLowerCase());
+        break;
+      case "date":
+        out.push(...dateValues(r));
+        break;
+    }
   }
   return out;
 }

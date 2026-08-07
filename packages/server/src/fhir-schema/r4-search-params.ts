@@ -10,6 +10,9 @@ export interface SearchParamDef {
   type: string;
   expression: string;
   target?: string[]; // reference param target resource types (for chaining)
+  /** Composite params only: the two component sub-params (restricted expression grammar —
+   * `prop` / `prop.as(Type)` relative to `expression`'s base elements). */
+  components?: Array<{ expression: string; type: "token" | "quantity" | "string" | "date" }>;
 }
 
 const registry: Record<string, Record<string, SearchParamDef>> = JSON.parse(
@@ -19,16 +22,22 @@ const registry: Record<string, Record<string, SearchParamDef>> = JSON.parse(
 // Additive IG params (e.g. CARIN BB EOB `type`/`service-date`) — imported after the core registry so
 // core is the base and profile params extend it. Kept separate so the generated core JSON stays pure.
 import { PROFILE_SEARCH_PARAMS } from "./profile-search-params.js";
+import { COMPOSITE_SEARCH_PARAMS } from "./composite-search-params.js";
 
-/** Supported search params for a resource type (core + additive profile params; {} if none/unknown). */
+/** Supported search params for a resource type (core + additive profile/composite params;
+ * {} if none/unknown). Composites live in their own registry because the codegen drops
+ * type `composite` from the core JSON. */
 export function searchParamsFor(resourceType: string): Record<string, SearchParamDef> {
   const core = registry[resourceType];
   const profile = PROFILE_SEARCH_PARAMS[resourceType];
-  if (!core && !profile) return {};
-  return { ...(profile ?? {}), ...(core ?? {}) }; // core last → core always wins; profile only fills gaps
+  const composite = COMPOSITE_SEARCH_PARAMS[resourceType];
+  if (!core && !profile && !composite) return {};
+  return { ...(profile ?? {}), ...(composite ?? {}), ...(core ?? {}) }; // core last → core always wins
 }
 
 /** A single param definition, or undefined if not supported for that type. */
 export function searchParam(resourceType: string, code: string): SearchParamDef | undefined {
-  return registry[resourceType]?.[code] ?? PROFILE_SEARCH_PARAMS[resourceType]?.[code];
+  return registry[resourceType]?.[code]
+    ?? COMPOSITE_SEARCH_PARAMS[resourceType]?.[code]
+    ?? PROFILE_SEARCH_PARAMS[resourceType]?.[code];
 }

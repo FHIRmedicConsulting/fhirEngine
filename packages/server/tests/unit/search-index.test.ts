@@ -124,6 +124,64 @@ describe("buildSearchIndex", () => {
     expect(values(idx, "date")).toEqual(["2024-03-01T10:00:00Z"]);
   });
 
+  it("composite: code-value-quantity pairs the Observation's code with its Quantity value", () => {
+    const obs = {
+      resourceType: "Observation", id: "o1", status: "final",
+      code: { coding: [{ system: "http://loinc.org", code: "8480-6" }] },
+      valueQuantity: { value: 128, unit: "mmHg", system: "http://unitsofmeasure.org" },
+    };
+    const idx = buildSearchIndex(obs);
+    expect(rows(idx, "code-value-quantity")).toEqual(expect.arrayContaining([
+      { code: "code-value-quantity", system: "http://loinc.org|8480-6", value: "128" },
+      { code: "code-value-quantity", system: "8480-6", value: "128" }, // bare-code encoding
+    ]));
+  });
+
+  it("composite: component-code-value-quantity pairs WITHIN each component (same-element)", () => {
+    const bp = {
+      resourceType: "Observation", id: "o2", status: "final",
+      code: { coding: [{ system: "http://loinc.org", code: "85354-9" }] },
+      component: [
+        { code: { coding: [{ system: "http://loinc.org", code: "8480-6" }] }, valueQuantity: { value: 120 } },
+        { code: { coding: [{ system: "http://loinc.org", code: "8462-4" }] }, valueQuantity: { value: 80 } },
+      ],
+    };
+    const idx = rows(buildSearchIndex(bp), "component-code-value-quantity");
+    expect(idx).toEqual(expect.arrayContaining([
+      { code: "component-code-value-quantity", system: "8480-6", value: "120" },
+      { code: "component-code-value-quantity", system: "8462-4", value: "80" },
+    ]));
+    // The cross-element pairings must NOT exist — that's the whole point of composites.
+    expect(idx).not.toEqual(expect.arrayContaining([{ code: "component-code-value-quantity", system: "8480-6", value: "80" }]));
+    expect(idx).not.toEqual(expect.arrayContaining([{ code: "component-code-value-quantity", system: "8462-4", value: "120" }]));
+  });
+
+  it("composite: combo- params union the root and component elements", () => {
+    const bp = {
+      resourceType: "Observation", id: "o3", status: "final",
+      code: { coding: [{ code: "85354-9" }] },
+      component: [{ code: { coding: [{ code: "8480-6" }] }, valueQuantity: { value: 120 } }],
+    };
+    const combo = rows(buildSearchIndex(bp), "combo-code-value-quantity");
+    expect(combo).toEqual(expect.arrayContaining([{ code: "combo-code-value-quantity", system: "8480-6", value: "120" }]));
+  });
+
+  it("composite: code-value-concept and code-value-string index concept codes / lowercased strings", () => {
+    const obs = {
+      resourceType: "Observation", id: "o4", status: "final",
+      code: { coding: [{ system: "http://loinc.org", code: "72166-2" }] },
+      valueCodeableConcept: { coding: [{ system: "http://snomed.info/sct", code: "8517006" }] },
+    };
+    expect(rows(buildSearchIndex(obs), "code-value-concept")).toEqual(expect.arrayContaining([
+      { code: "code-value-concept", system: "http://loinc.org|72166-2", value: "8517006" },
+      { code: "code-value-concept", system: "72166-2", value: "http://snomed.info/sct|8517006" },
+    ]));
+    const s = { resourceType: "Observation", id: "o5", status: "final", code: { coding: [{ code: "X" }] }, valueString: "Mixed Case" };
+    expect(rows(buildSearchIndex(s), "code-value-string")).toEqual(expect.arrayContaining([
+      { code: "code-value-string", system: "X", value: "mixed case" },
+    ]));
+  });
+
   it("absent elements produce no entries (no empty/null values ever indexed)", () => {
     const idx = buildSearchIndex({ resourceType: "Patient", id: "p2" });
     expect(idx.every((e) => e.value !== "" && e.value !== "undefined" && e.value !== "null")).toBe(true);
