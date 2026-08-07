@@ -401,10 +401,30 @@ def do_delete(req):
     return {"deleted": getattr(res, "num_deleted_rows", None) if hasattr(res, "num_deleted_rows") else str(res)}
 
 
+def do_cdf(req):
+    """Change Data Feed since a version: distinct changed `id`s + the table's current version
+    (ADR-0026 incremental promotion). Bronze/Silver tables are created with
+    delta.enableChangeDataFeed=true; a table predating that (or a starting_version older than
+    the retained feed) raises — callers treat any error as "fall back to full rebuild".
+    Omitting starting_version returns just the current version (watermark bootstrap)."""
+    path = _confine(req["table_path"])
+    dt = DeltaTable(path)
+    version = dt.version()
+    sv = req.get("starting_version")
+    if sv is None or int(sv) > version:
+        return {"version": version, "ids": []}
+    ids = set()
+    reader = dt.load_cdf(starting_version=int(sv))
+    for batch in reader:
+        if "id" in batch.schema.names:
+            ids.update(v for v in batch.column("id").to_pylist() if v is not None)
+    return {"version": version, "ids": sorted(ids)}
+
+
 ROUTES = {"/write": do_write, "/write-version": do_write_version, "/merge": do_merge, "/query": do_query,
  "/migrate-is-current": do_migrate_is_current,
           "/optimize": do_optimize, "/optimize-all": do_optimize_all, "/delete": do_delete,
-          "/list-tables": do_list_tables}
+          "/list-tables": do_list_tables, "/cdf": do_cdf}
 
 
 class Handler(BaseHTTPRequestHandler):

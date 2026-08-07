@@ -183,3 +183,33 @@ def test_write_version_conflict_detected(tmp_path):
     # exactly one current row, and it's the first writer's v2 (body intact)
     rows = q(p, "SELECT version_id, is_current FROM t WHERE is_current = true")
     assert len(rows) == 1 and rows[0]["version_id"] == 2
+
+
+# --- Change Data Feed (/cdf — ADR-0026 incremental promotion) ----------------
+def test_cdf_changed_ids(tmp_path):
+    # A /bronze/ path gets delta.enableChangeDataFeed=true at creation.
+    p = str(tmp_path / "bronze" / "observation")
+    ds.do_write({"table_path": p, "rows": [bronze("a", 1, True), bronze("b", 1, True)], "schema": "bronze"})
+    v0 = ds.do_cdf({"table_path": p})
+    assert v0["version"] == 0 and v0["ids"] == []  # version-only probe (no starting_version)
+
+    ds.do_write({"table_path": p, "rows": [bronze("a", 2, True)], "schema": "bronze"})
+    ds.do_write({"table_path": p, "rows": [bronze("c", 1, True)], "schema": "bronze"})
+    res = ds.do_cdf({"table_path": p, "starting_version": v0["version"] + 1})
+    assert res["version"] == 2
+    assert res["ids"] == ["a", "c"]  # b unchanged since version 0
+
+    # A starting_version beyond the current version → no changes.
+    beyond = ds.do_cdf({"table_path": p, "starting_version": res["version"] + 1})
+    assert beyond["ids"] == []
+
+
+def test_cdf_synthesized_for_append_only_tables(tmp_path):
+    # delta-rs derives CDF from the commit log for APPEND-ONLY history even without the
+    # delta.enableChangeDataFeed property (the property is required once MERGE/DELETE
+    # commits appear — errors there surface to callers, who fall back to full rebuild).
+    p = str(tmp_path / "gold" / "observation")
+    ds.do_write({"table_path": p, "rows": [bronze("a", 1, True)], "schema": "bronze"})
+    ds.do_write({"table_path": p, "rows": [bronze("b", 1, True)], "schema": "bronze"})
+    res = ds.do_cdf({"table_path": p, "starting_version": 1})
+    assert res["ids"] == ["b"]

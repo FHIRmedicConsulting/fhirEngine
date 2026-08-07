@@ -31,6 +31,9 @@ export interface Catalog {
   /** MPI table location (patient_link / patient_match_review / patient_merge_history) —
    * all MPI tables live in Gold per ADR-0012 §2 (operational identity data). */
   mpiPath(table: string): string;
+
+  /** Promotion watermark table (ADR-0026 CDF-incremental): one row per resource type. */
+  promoteStatePath(): string;
 }
 
 /**
@@ -81,6 +84,10 @@ export class PathCatalog implements Catalog {
 
   mpiPath(table: string): string {
     return `${this.base}/gold/${table}`;
+  }
+
+  promoteStatePath(): string {
+    return `${this.base}/gold/promote_state`;
   }
 
   udapClientPath(): string {

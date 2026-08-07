@@ -9,11 +9,16 @@
  * created with delta.enableChangeDataFeed=true).
  *
  * Usage:
- *   fhirengine-promote <ResourceType> [ResourceType...]   promote named types
+ *   fhirengine-promote <ResourceType> [ResourceType...]   promote named types (full rebuild)
  *   fhirengine-promote --all                              promote every Bronze table
+ *   fhirengine-promote --incremental [...]                CDF-incremental: only ids changed in
+ *                                                         Bronze since the last promoted version
+ *                                                         (watermark in gold/promote_state; falls
+ *                                                         back to full whenever unsafe — Patient
+ *                                                         w/ MPI, first run, CDF unavailable)
  */
 import { DeltaWarehouse } from "../src/lib/delta-warehouse.js";
-import { promote, loadSurvivorMap } from "../src/repository/promote.js";
+import { promote, promoteIncremental, loadSurvivorMap } from "../src/repository/promote.js";
 import { r4CoreResourceTypes } from "../src/fhir-schema/r4-registry.js";
 
 /** Bronze table names are lowercased — recover the canonical R4 casing for the flattener. */
@@ -21,6 +26,7 @@ const canonical = new Map(r4CoreResourceTypes.map((t) => [t.toLowerCase(), t]));
 
 async function main() {
   const args = process.argv.slice(2);
+  const incremental = args.includes("--incremental");
   const wh = new DeltaWarehouse({
     sidecarUrl: process.env.FHIRENGINE_DELTA_SIDECAR_URL ?? "http://127.0.0.1:8077",
     base: process.env.FHIRENGINE_DELTA_BASE ?? "./delta",
@@ -53,11 +59,13 @@ async function main() {
   let survivorOf: Map<string, string> | undefined;
   for (const t of types) {
     const t0 = Date.now();
-    const r = await promote(wh, t, t === "Patient" ? undefined : { survivorOf });
+    const opts = t === "Patient" ? undefined : { survivorOf };
+    const r = incremental ? await promoteIncremental(wh, t, opts) : await promote(wh, t, opts);
     if (t === "Patient") survivorOf = await loadSurvivorMap(wh);
     results.push({ ...r, ms: Date.now() - t0 });
     const mpiNote = r.merges !== undefined ? ` mpi(merges=${r.merges} reviews=${r.reviews})` : "";
-    process.stderr.write(`  ${r.resourceType}: bronze=${r.bronzeRows} → gold=${r.gold} silver=${r.silver}${mpiNote}\n`);
+    const modeNote = "mode" in r ? ` [${(r as { mode: string }).mode}]` : "";
+    process.stderr.write(`  ${r.resourceType}: bronze=${r.bronzeRows} → gold=${r.gold} silver=${r.silver}${mpiNote}${modeNote}\n`);
   }
   console.log(JSON.stringify({ promoted: results.length, results }, null, 2));
 }

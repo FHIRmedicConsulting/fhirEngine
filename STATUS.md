@@ -84,9 +84,9 @@ breadth (codeableConcept validate, `$expand` filter/paging/total) · ✅ search 
 ## Remaining follow-ups (explicitly deferred, lower priority)
 ✅ SMART **Backend Services** (client_credentials + private_key_jwt) — DONE. Remaining:
 **composite** search params + multi-field `_sort` (codegen) · slicing max/closed + L4 invariants
-at depth ≥2 · CDF-incremental promotion inside `fhirengine-promote` (full-rebuild is the shipped
-reference; external promoters can already use CDF) · run the full **Inferno (g)(10)** suites
-end-to-end (auth server + backend services now make the OAuth-gated suites reachable).
+at depth ≥2 · run the full **Inferno (g)(10)** suites
+end-to-end — ✅ DONE (Runs 12–17, zero failures over TLS). CDF-incremental promotion — ✅ DONE
+(`fhirengine-promote --incremental`, watermarked, full-rebuild fallback).
 
 ## Run / resume
 Guided setup: `cd packages/server && npm run init` (writes `deploy/.env`, prints run +

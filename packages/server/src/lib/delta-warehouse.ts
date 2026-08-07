@@ -210,6 +210,30 @@ export class DeltaWarehouse implements Warehouse {
     return table;
   }
 
+  /** Distinct ids changed in a Bronze table since `startingVersion` (Change Data Feed) plus
+   * the table's current version. Omit `startingVersion` to read just the version (watermark
+   * bootstrap). Throws when CDF isn't available for the table — callers fall back to full. */
+  async cdfChangedIds(resourceType: string, startingVersion?: number): Promise<{ version: number; ids: string[] }> {
+    const path = this.catalog.tablePath("bronze", resourceType);
+    return this.postWrite(path, "/cdf", {
+      table_path: path,
+      ...(startingVersion !== undefined ? { starting_version: startingVersion } : {}),
+    });
+  }
+
+  /** Register + name the promotion watermark table (ADR-0026 CDF-incremental). */
+  registerPromoteState(): string {
+    this.registerTable("promote_state", this.catalog.promoteStatePath());
+    return "promote_state";
+  }
+
+  /** Write the promotion watermark table (small; read-modify-overwrite by callers). */
+  async writePromoteState(rows: unknown[], mode: "append" | "overwrite" = "overwrite"): Promise<void> {
+    const path = this.catalog.promoteStatePath();
+    this.registerTable("promote_state", path);
+    await this.postWrite(path, "/write", { table_path: path, rows, mode, schema: "infer" });
+  }
+
   /** Write rows to an MPI table (ADR-0012 — Gold-anchored identity tables). */
   async writeMpi(table: string, rows: unknown[], mode: "append" | "overwrite" = "append"): Promise<void> {
     const path = this.catalog.mpiPath(table);
@@ -409,7 +433,10 @@ export class DeltaWarehouse implements Warehouse {
    * tables, audit, terminology, conformance, dead-letter, pending. The store maintenance op.
    */
   async optimizeAll(opts?: OptimizeOpts): Promise<unknown> {
-    return this.post("/optimize-all", optimizeBody(opts));
+    // Pass OUR base explicitly (like /list-tables does): without it the sidecar walks its own
+    // --base, which silently optimizes the wrong store whenever the two differ (multi-base
+    // test harness; a misconfigured deploy would no-op invisibly).
+    return this.post("/optimize-all", { ...optimizeBody(opts), base: this.base });
   }
 
   /** Register the audit-event store for querying (accounting of disclosures). */

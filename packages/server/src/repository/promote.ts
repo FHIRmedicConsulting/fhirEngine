@@ -140,24 +140,11 @@ export async function promote(wh: DeltaWarehouse, resourceType: string, opts?: P
   // current version by construction — EXCEPT merged-away Patients (is_current=false:
   // readable by id with their replaced-by link, excluded from every search).
   if (currentRows.length) {
-    const goldRows = currentRows.map((r) => ({ ...r, is_current: r._mpi_merged !== true }));
-    for (const g of goldRows) delete (g as Record<string, unknown>)._mpi_merged;
-    await wh.mergeTier("gold", resourceType, goldRows, "id", "bronze");
+    await wh.mergeTier("gold", resourceType, goldRowsFrom(currentRows), "id", "bronze");
   }
 
   // Silver — flattened + governance, current version. Full-rebuild (overwrite).
-  const cols = schemaFor(resourceType);
-  const silverRaw = currentRows.map((r) => ({
-    silver_id: r.id,
-    fhir_id: r.id,
-    version_id: Number(r.version_id),
-    silver_status: r._mpi_merged === true ? "merged" : "pass",
-    governed_at: now,
-    deleted: r.deleted ?? false,
-    body_json: r.body_json, // source-of-truth retained (post-MPI: links/rewrites applied)
-    ...flattenResource(JSON.parse(r.body_json), cols),
-  })) as Record<string, unknown>[];
-  const silverRows = pruneAllNullColumns(silverRaw);
+  const silverRows = silverRowsFrom(currentRows, resourceType, now);
   if (silverRows.length) {
     await wh.writeTier("silver", resourceType, silverRows, "infer", "overwrite");
   }
@@ -170,6 +157,146 @@ export async function promote(wh: DeltaWarehouse, resourceType: string, opts?: P
     silver: silverRows.length,
     ...(mpi ? { merges: mpi.merges.length, reviews: mpi.reviews.length } : {}),
   };
+}
+
+/** Gold projection shape shared by full + incremental promotion. */
+function goldRowsFrom(currentRows: BronzeRow[]): Record<string, unknown>[] {
+  const goldRows = currentRows.map((r) => ({ ...r, is_current: r._mpi_merged !== true }));
+  for (const g of goldRows) delete (g as Record<string, unknown>)._mpi_merged;
+  return goldRows;
+}
+
+/** Silver row shape (flattened + governance) shared by full + incremental promotion. */
+function silverRowsFrom(currentRows: BronzeRow[], resourceType: string, now: string): Record<string, unknown>[] {
+  const cols = schemaFor(resourceType);
+  const raw = currentRows.map((r) => ({
+    silver_id: r.id,
+    fhir_id: r.id,
+    version_id: Number(r.version_id),
+    silver_status: r._mpi_merged === true ? "merged" : "pass",
+    governed_at: now,
+    deleted: r.deleted ?? false,
+    body_json: r.body_json, // source-of-truth retained (post-MPI: links/rewrites applied)
+    ...flattenResource(JSON.parse(r.body_json), cols),
+  })) as Record<string, unknown>[];
+  return pruneAllNullColumns(raw);
+}
+
+// ── CDF-incremental promotion (ADR-0026 optimization; full-rebuild stays the backstop) ────
+
+export interface IncrementalResult extends PromoteResult {
+  mode: "full" | "incremental" | "noop";
+  fromVersion?: number;
+  toVersion?: number;
+}
+
+async function readWatermark(wh: DeltaWarehouse, resourceType: string): Promise<number | null> {
+  try {
+    wh.registerPromoteState();
+    const rows = await wh.query<{ bronze_version: number }>(
+      "SELECT bronze_version FROM promote_state WHERE resource_type = ?", [resourceType]);
+    return rows.length ? Number(rows[0]!.bronze_version) : null;
+  } catch {
+    return null; // no state table yet → full rebuild
+  }
+}
+
+async function writeWatermark(wh: DeltaWarehouse, resourceType: string, version: number): Promise<void> {
+  let rows: Array<Record<string, unknown>> = [];
+  try {
+    wh.registerPromoteState();
+    rows = await wh.query("SELECT resource_type, bronze_version, promoted_at FROM promote_state");
+  } catch { /* first write */ }
+  const next = [
+    ...rows.filter((r) => r.resource_type !== resourceType),
+    { resource_type: resourceType, bronze_version: version, promoted_at: new Date().toISOString() },
+  ];
+  await wh.writePromoteState(next, "overwrite");
+}
+
+/** Run a FULL promote and stamp the watermark at Bronze's current version. */
+async function fullWithWatermark(wh: DeltaWarehouse, resourceType: string, opts?: PromoteOpts): Promise<IncrementalResult> {
+  const r = await promote(wh, resourceType, opts);
+  try {
+    const { version } = await wh.cdfChangedIds(resourceType); // version-only probe
+    await writeWatermark(wh, resourceType, version);
+  } catch (e) {
+    logSwallowed(`promote:watermark:${resourceType}`, e); // CDF/table absent → next run full-rebuilds again
+  }
+  return { ...r, mode: "full" };
+}
+
+/**
+ * CDF-incremental promotion: read the ids changed in Bronze since the last promoted version
+ * (Change Data Feed), re-derive current-version rows for ONLY those ids, MERGE them into Gold
+ * and Silver, and advance the watermark. Falls back to the full rebuild whenever it cannot be
+ * incremental safely:
+ *   - Patient with MPI enabled (identity resolution needs the FULL identifier space),
+ *   - no watermark yet / state table absent,
+ *   - CDF read fails (table predates CDF enablement, feed vacuumed, ...),
+ *   - the Silver MERGE fails (e.g. a changed resource introduces a brand-new column —
+ *     schema evolution is the overwrite path's job).
+ */
+export async function promoteIncremental(wh: DeltaWarehouse, resourceType: string, opts?: PromoteOpts): Promise<IncrementalResult> {
+  if (mpiEnabled() && resourceType === "Patient") return fullWithWatermark(wh, resourceType, opts);
+  const watermark = await readWatermark(wh, resourceType);
+  if (watermark === null) return fullWithWatermark(wh, resourceType, opts);
+
+  let cdf: { version: number; ids: string[] };
+  try {
+    cdf = await wh.cdfChangedIds(resourceType, watermark + 1);
+  } catch (e) {
+    logSwallowed(`promote:cdf:${resourceType}`, e);
+    return fullWithWatermark(wh, resourceType, opts);
+  }
+  if (!cdf.ids.length) {
+    return { resourceType, bronzeRows: 0, currentIds: 0, gold: 0, silver: 0, mode: "noop", fromVersion: watermark, toVersion: cdf.version };
+  }
+
+  // All Bronze versions of the changed ids (chunked IN lists keep the SQL bounded).
+  const bronze = wh.registerTier("bronze", resourceType);
+  const rows: BronzeRow[] = [];
+  for (let i = 0; i < cdf.ids.length; i += 500) {
+    const chunk = cdf.ids.slice(i, i + 500);
+    const ph = chunk.map(() => "?").join(", ");
+    rows.push(...await wh.query<BronzeRow>(
+      `SELECT id, version_id, last_updated, body_json, identifier_index, search_param_index,
+              ext_json, deleted, _ingested_at, _ingest_source FROM ${bronze} WHERE id IN (${ph})`, chunk));
+  }
+  const current = new Map<string, BronzeRow>();
+  for (const r of rows) {
+    const prev = current.get(r.id);
+    if (!prev || Number(r.version_id) > Number(prev.version_id)) current.set(r.id, r);
+  }
+  let currentRows = [...current.values()];
+  const now = new Date().toISOString();
+
+  // Merged→survivor reference rewrite, exactly as the full path does for non-Patient types.
+  if (mpiEnabled()) {
+    const survivorOf = opts?.survivorOf ?? (await loadSurvivorMap(wh));
+    if (survivorOf.size) {
+      currentRows = currentRows.map((r) => ({
+        ...r,
+        body_json: rewriteReferences(r.body_json, survivorOf),
+        search_param_index: rewriteIndexRefs(r.search_param_index, survivorOf),
+      }));
+    }
+  }
+
+  try {
+    if (currentRows.length) await wh.mergeTier("gold", resourceType, goldRowsFrom(currentRows), "id", "bronze");
+    const silverRows = silverRowsFrom(currentRows, resourceType, now);
+    if (silverRows.length) await wh.mergeTier("silver", resourceType, silverRows, "silver_id", "infer");
+    await writeWatermark(wh, resourceType, cdf.version);
+    return {
+      resourceType, bronzeRows: rows.length, currentIds: current.size,
+      gold: currentRows.length, silver: silverRows.length,
+      mode: "incremental", fromVersion: watermark, toVersion: cdf.version,
+    };
+  } catch (e) {
+    logSwallowed(`promote:incremental-merge:${resourceType}`, e);
+    return fullWithWatermark(wh, resourceType, opts); // e.g. new Silver column → overwrite path handles
+  }
 }
 
 /** Apply auto-merges to the current Patient rows (ADR-0012 merge semantics):

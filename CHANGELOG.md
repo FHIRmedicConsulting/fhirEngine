@@ -6,6 +6,20 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (CDF-incremental promotion)
+- **`fhirengine-promote --incremental`** (ADR-0026 optimization): reads the Bronze Change Data
+  Feed since the last promoted version (watermark in `gold/promote_state`), re-derives
+  current-version rows for ONLY the changed ids, and MERGEs them into Gold + Silver (Silver
+  moves from overwrite to keyed MERGE on the incremental path). Falls back to the full rebuild
+  whenever it cannot be incremental safely: Patient with MPI on (identity resolution needs the
+  full identifier space), first run / missing watermark, CDF read failure, or a Silver MERGE
+  failure (new-column schema evolution stays the overwrite path's job). New sidecar `/cdf`
+  endpoint (delta-rs `load_cdf` → distinct changed ids + current version).
+- **Fixed (latent):** `optimizeAll` never passed the store base to the sidecar, so `/optimize-all`
+  always walked the SIDECAR's `--base` — silently optimizing the wrong store whenever the two
+  differed (and no-opping invisibly in a misconfigured deploy). The base now travels with the
+  request, like `/list-tables`.
+
 ### Added (validation depth)
 - **Invariant contexts at any depth** — L4 FHIRPath constraint contexts are resolved by a full
   path walk (arrays fan out at every level; `value[x]` segments match the present choice
