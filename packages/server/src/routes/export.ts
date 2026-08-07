@@ -122,7 +122,10 @@ export function mountExport(app: Hono, wh: DeltaWarehouse, baseUrl: string): voi
       // exclude any patient who has opted out. Off by default; production enablement is a deploy gate.
       if (providerAccessOptOutEnabled()) patientIds = await filterProviderOptOut(wh, patientIds ?? []);
     }
-    const jobId = await createExportJob(new URL(c.req.url).pathname + (c.req.url.includes("?") ? `?${c.req.url.split("?")[1]}` : ""), new Date().toISOString(), false);
+    // requiresAccessToken mirrors the deployment: with the auth gate on, file downloads pass
+    // through it and need the bearer (Bulk Data §manifest — was hardcoded false, so conformant
+    // clients fetched files tokenless and got 401 OperationOutcomes as their "NDJSON").
+    const jobId = await createExportJob(new URL(c.req.url).pathname + (c.req.url.includes("?") ? `?${c.req.url.split("?")[1]}` : ""), new Date().toISOString(), Boolean(auth));
     void runExport(jobId, { scope, typeFilter, since, patientIds }); // background
     c.header("Content-Location", `${baseUrl}/_export-status/${jobId}`);
     return c.body(null, 202);

@@ -593,3 +593,33 @@ negatives, EHR-launch-with-patient-scopes, token-revocation attestation) now run
 **Remaining for full (g)(10):** Multi-Patient API groups 7/8 (Backend Services + Bulk `$export`
 against the harness), Single Patient API groups (token-gated US Core; validator-dependent),
 Visual Inspection attestations, and the TLS suite (deployment, not code).
+
+---
+
+## Run 14 (2026-08-06) — Multi-Patient API (groups 7 + 8): zero non-TLS fails
+
+Both Multi-Patient Authorization and API groups now pass headlessly — **STU2: 26 pass / 18 skip /
+8 fail (all TLS)**, **STU1: 22 pass / 18 skip / 7 fail (all TLS)**. This proves SMART Backend
+Services (ES384 `private_key_jwt` against the registered JWKS, one-time jti) and the disk-backed
+Group `$export` — kickoff → status polling → authenticated NDJSON downloads → per-type content
+validation → member-patient verification — against the real kit. Skips are data-absent resource
+types in the 3-patient Synthea set.
+
+**Real server fix found by the harness (kept, unit-tested):**
+- **`requiresAccessToken` was hardcoded `false`** in the export manifest while the auth gate
+  protected the file endpoints — a conformant client (Inferno) therefore fetched NDJSON files
+  WITHOUT a bearer and got 401 OperationOutcomes as its "content" (every per-type validation
+  failed with "Resource type OperationOutcome does not match"). Now mirrors the deployment:
+  `requiresAccessToken = auth enabled`, so clients present the token and stream the real files.
+
+**Setup for this run:**
+- `Group/019fd9ee-83da-7473-b49d-78c4f374551c` (3 Synthea patients) created via POST (note:
+  PUT-create to a fresh id 404s — create-by-update not supported on unprovisioned tables).
+- `inferno_bulk` client registered with Inferno's bulk-data JWKS **inline** (the kit's
+  `bulk_smart_auth_info` carries the JWKS as a locked default — extracted and mirrored into
+  `FHIRENGINE_OAUTH_CLIENTS`); `encryption_algorithm: ES384`, scope `system/*.read`,
+  `use_discovery: false` + explicit `token_url`.
+
+**Remaining for full (g)(10):** Single Patient API groups (validator-dependent), Visual
+Inspection attestations, TLS suite (the server's hardened TLS listener from Run 11 makes a local
+attempt plausible — next candidate).

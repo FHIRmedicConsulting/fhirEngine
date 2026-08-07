@@ -42,9 +42,11 @@ line coverage.
 > the **OAuth-gated app groups run end-to-end**: Standalone Patient App (Full + Limited), EHR
 > Practitioner App, and (Run 13) **Additional Authorization Tests** — public + asymmetric clients,
 > v1 + fine-grained granular scopes, granular scope selection, RFC 7662 token introspection, and the
-> invalid-aud/token/PKCE negatives — all pass everything except the TLS checks (expected on the
-> plain-HTTP local harness). Not yet driven: Multi-Patient/Bulk against the harness, the Single
-> Patient API groups, attestations, and the TLS suite (needs a TLS deployment).
+> invalid-aud/token/PKCE negatives — and (Run 14) **both Multi-Patient API groups** (Backend
+> Services ES384 private_key_jwt + Group `$export` → authenticated NDJSON downloads, content
+> validated) — all pass everything except the TLS checks (expected on the plain-HTTP local
+> harness). Not yet driven: the Single Patient API groups, attestations, and the TLS suite (the
+> server's TLS listener makes a local attempt plausible).
 
 Harness stood up (docker g10 kit); server driven headlessly. **Run 9 (2026-07-03) — validator LIVE:**
 fixed the OOM (Docker VM → **12 GB** + validator **`-Xmx8g`**) and the base-URL mismatch (server
