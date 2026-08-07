@@ -58,7 +58,9 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_AUTH_STRATEGY` | `jwks` | `jwks` \| `oidc` \| `local` (verify our own OAuth server) \| `stub` (tests). |
 | `FHIRENGINE_JWKS_URI` | — | jwks strategy: the IdP JWKS URL. |
 | `FHIRENGINE_JWT_PUBLIC_KEY` / `FHIRENGINE_JWT_ISSUER` / `FHIRENGINE_JWT_AUDIENCE` / `FHIRENGINE_JWT_ALG` | — | Static-key JWT validation params. |
-| `FHIRENGINE_OIDC_DISCOVERY` | — | oidc strategy: issuer discovery URL. |
+| `FHIRENGINE_OIDC_DISCOVERY_URL` | — | External-IdP discovery doc. **Required when `FHIRENGINE_AUTH_STRATEGY=oidc`** (boot fails without it). Introspection (RFC 7662) when advertised, else JWKS validation of the token's own signature. |
+| `FHIRENGINE_OIDC_CLIENT_ID` / `FHIRENGINE_OIDC_CLIENT_SECRET` | fhirengine / — | Introspection client auth (Basic). Unset secret + `FHIRENGINE_OIDC_PRIVATE_KEY` (PKCS8 PEM, `FHIRENGINE_OIDC_PRIVATE_KEY_ALG` default RS256) → private_key_jwt (RFC 7523). |
+| `FHIRENGINE_OIDC_JWKS_CACHE_TTL` | 86400 | Seconds the JWKS-fallback remote key set is cached. |
 | `FHIRENGINE_SMART_VERSIONS` | all | Active SMART grammars (e.g. `2.0.0,2.2.0`). |
 | `FHIRENGINE_SMART_AUTHORIZE_URL` / `FHIRENGINE_SMART_TOKEN_URL` | — | Advertised in `.well-known/smart-configuration` if using an external AS. |
 

@@ -11,17 +11,25 @@
  * ADR-0006 §6 (24h default; tighter for `strict_federal`).
  */
 
+import { createRemoteJWKSet, importPKCS8, jwtVerify, SignJWT } from "jose";
+import { randomUUID } from "node:crypto";
 import type { AuthStrategy, IntrospectionResult } from "./types.js";
+import { mapJwtClaims } from "./jwks-auth.js";
 
 export interface OidcAuthOptions {
   /** OIDC discovery URL — e.g., https://your-idp/.well-known/openid-configuration */
   discoveryUrl: string;
   /** fhirEngine's client_id at the IdP. */
   clientId: string;
-  /** fhirEngine's client_secret (or null if private_key_jwt). */
+  /** fhirEngine's client_secret (or null if private_key_jwt / public). */
   clientSecret: string | null;
   /** JWKS cache TTL in seconds. */
   jwksCacheTtl: number;
+  /** private_key_jwt client auth (RFC 7523): PKCS8 PEM used to sign the introspection
+   * client_assertion when no clientSecret is configured. */
+  privateKey?: string;
+  /** Signing alg for `privateKey` (default RS256). */
+  privateKeyAlg?: string;
 }
 
 interface DiscoveryDocument {
@@ -43,12 +51,13 @@ export class OidcAuthStrategy implements AuthStrategy {
   async introspect(token: string): Promise<IntrospectionResult> {
     const discovery = await this.discover();
     if (!discovery.introspection_endpoint) {
-      // No introspection endpoint — would fall back to JWKS-based JWT validation here.
-      // v1 of this strategy requires the IdP to support introspection. JWKS-only
-      // mode lands in a follow-up build.
+      // No introspection endpoint → JWKS-based JWT validation: the token's own signature,
+      // verified against the IdP's published JWKS, is the proof (same model as JwksAuthStrategy,
+      // but discovery-driven). Fails closed when the IdP advertises neither capability.
+      if (discovery.jwks_uri) return this.verifyViaJwks(token, discovery);
       return {
         active: false,
-        reason: `IdP at ${this.options.discoveryUrl} does not advertise an introspection_endpoint; JWKS-only validation is not implemented in this v1 strategy.`,
+        reason: `IdP at ${this.options.discoveryUrl} advertises neither introspection_endpoint nor jwks_uri; cannot validate tokens.`,
       };
     }
 
@@ -65,8 +74,13 @@ export class OidcAuthStrategy implements AuthStrategy {
         "utf-8",
       ).toString("base64");
       headers.Authorization = `Basic ${basic}`;
+    } else if (this.options.privateKey) {
+      // private_key_jwt (RFC 7523 §2.2): signed client_assertion; aud = the AS itself
+      // (issuer when advertised, else the token endpoint) per §3.
+      body.set("client_id", this.options.clientId);
+      body.set("client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer");
+      body.set("client_assertion", await this.clientAssertion(discovery));
     } else {
-      // private_key_jwt would attach a signed client_assertion here (v1.x follow-up).
       body.set("client_id", this.options.clientId);
     }
 
@@ -93,6 +107,40 @@ export class OidcAuthStrategy implements AuthStrategy {
 
     const data = (await res.json()) as IntrospectionResult;
     return data;
+  }
+
+  /** JWKS fallback: verify the bearer's own JWT signature against the IdP's published JWKS.
+   * The remote key set is cached per jwks_uri (jose refreshes per `jwksCacheTtl`). */
+  private jwksCache: { keySet: ReturnType<typeof createRemoteJWKSet>; uri: string } | null = null;
+  private async verifyViaJwks(token: string, discovery: DiscoveryDocument): Promise<IntrospectionResult> {
+    try {
+      const uri = discovery.jwks_uri!; // caller guarantees presence
+      const cache = this.jwksCache?.uri === uri
+        ? this.jwksCache
+        : (this.jwksCache = { uri, keySet: createRemoteJWKSet(new URL(uri), { cacheMaxAge: this.options.jwksCacheTtl * 1000 }) });
+      const { payload } = await jwtVerify(token, cache.keySet, {
+        // Asymmetric-only allow-list (same posture as JwksAuthStrategy — no none/HS*).
+        algorithms: ["RS256", "PS256", "ES256", "ES384"],
+        ...(discovery.issuer ? { issuer: discovery.issuer } : {}),
+      });
+      return mapJwtClaims(payload as Record<string, unknown>);
+    } catch (e) {
+      return { active: false, reason: `JWT verification failed: ${(e as { code?: string; message?: string })?.code ?? (e as Error)?.message ?? "invalid"}` };
+    }
+  }
+
+  /** Signed client_assertion for private_key_jwt introspection auth (RFC 7523). */
+  private async clientAssertion(discovery: DiscoveryDocument): Promise<string> {
+    const key = await importPKCS8(this.options.privateKey!, this.options.privateKeyAlg ?? "RS256");
+    const aud = discovery.issuer ?? discovery.token_endpoint ?? this.options.discoveryUrl;
+    return new SignJWT({ jti: randomUUID() })
+      .setProtectedHeader({ alg: this.options.privateKeyAlg ?? "RS256", typ: "JWT" })
+      .setIssuer(this.options.clientId)
+      .setSubject(this.options.clientId)
+      .setAudience(aud)
+      .setIssuedAt()
+      .setExpirationTime("60s")
+      .sign(key);
   }
 
   private async discover(): Promise<DiscoveryDocument> {

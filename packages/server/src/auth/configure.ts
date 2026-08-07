@@ -14,6 +14,7 @@ import { SmartVersionRegistry, ALL_ACTIVE_VERSIONS } from "./smart-versions/inde
 import { StubAuthStrategy } from "./idp/stub-auth.js";
 import { JwksAuthStrategy } from "./idp/jwks-auth.js";
 import { LocalAuthStrategy } from "./idp/local-auth.js";
+import { OidcAuthStrategy } from "./idp/oidc-auth.js";
 import type { AuthStrategy } from "./idp/types.js";
 
 export const authEnabled = (): boolean => process.env.FHIRENGINE_AUTH_ENABLED === "true";
@@ -23,7 +24,21 @@ function buildStrategy(): AuthStrategy {
     case "stub": return new StubAuthStrategy();
     case "jwks": return new JwksAuthStrategy();
     case "local": return new LocalAuthStrategy(); // verify tokens from our own SMART auth server
-    // case "oidc": return new OidcAuthStrategy({ discoveryUrl: process.env.FHIRENGINE_OIDC_DISCOVERY!, ... });
+    case "oidc": {
+      // External-IdP mode: RFC 7662 introspection when the IdP offers it, else JWKS validation
+      // of the token's own signature (discovery-driven). Fails fast on missing discovery URL —
+      // an auth strategy that can't reach its IdP must not boot half-configured.
+      const discoveryUrl = process.env.FHIRENGINE_OIDC_DISCOVERY_URL;
+      if (!discoveryUrl) throw new Error("FHIRENGINE_AUTH_STRATEGY=oidc requires FHIRENGINE_OIDC_DISCOVERY_URL");
+      return new OidcAuthStrategy({
+        discoveryUrl,
+        clientId: process.env.FHIRENGINE_OIDC_CLIENT_ID ?? "fhirengine",
+        clientSecret: process.env.FHIRENGINE_OIDC_CLIENT_SECRET ?? null,
+        jwksCacheTtl: Number(process.env.FHIRENGINE_OIDC_JWKS_CACHE_TTL) || 86400,
+        ...(process.env.FHIRENGINE_OIDC_PRIVATE_KEY ? { privateKey: process.env.FHIRENGINE_OIDC_PRIVATE_KEY } : {}),
+        ...(process.env.FHIRENGINE_OIDC_PRIVATE_KEY_ALG ? { privateKeyAlg: process.env.FHIRENGINE_OIDC_PRIVATE_KEY_ALG } : {}),
+      });
+    }
     default: return new JwksAuthStrategy();
   }
 }

@@ -6,6 +6,14 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (external-IdP auth)
+- **The OIDC auth strategy is now wired and complete** (`FHIRENGINE_AUTH_STRATEGY=oidc` +
+  `FHIRENGINE_OIDC_DISCOVERY_URL`): RFC 7662 introspection when the IdP advertises it — with
+  Basic or **private_key_jwt** (RFC 7523) client auth — and **JWKS-fallback validation** of the
+  bearer's own signature (discovery `jwks_uri`, issuer-pinned, asymmetric-only algs, cached key
+  set) when it doesn't. Fails closed when the IdP advertises neither; boot fails fast on a
+  missing discovery URL. Previously the `oidc` case was commented out and unselectable.
+
 ## [0.1.0-alpha.6] - 2026-08-06
 
 ### Conformance — Inferno (g)(10) campaign complete (Runs 14-17)

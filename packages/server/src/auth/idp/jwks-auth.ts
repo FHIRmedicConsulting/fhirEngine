@@ -44,25 +44,31 @@ export class JwksAuthStrategy implements AuthStrategy {
       };
       // key union vs jwtVerify overloads
       const { payload: p } = await jwtVerify(token, (await this.key()) as any, opts);
-      const scopeClaim = (p as any).scope ?? (p as any).scp;
-      const scope = Array.isArray(scopeClaim) ? scopeClaim.join(" ") : typeof scopeClaim === "string" ? scopeClaim : "";
-      return {
-        active: true,
-        sub: typeof p.sub === "string" ? p.sub : undefined,
-        client_id: (p as any).client_id ?? (p as any).azp,
-        scope,
-        exp: typeof p.exp === "number" ? p.exp : undefined,
-        iat: typeof p.iat === "number" ? p.iat : undefined,
-        iss: typeof p.iss === "string" ? p.iss : undefined,
-        aud: p.aud as string | string[] | undefined,
-        token_type: "Bearer",
-        patient: (p as any).patient,
-        encounter: (p as any).encounter,
-        fhirUser: (p as any).fhirUser,
-        purposeOfUse: (p as any).purpose_of_use ?? (p as any).pou,
-      };
+      return mapJwtClaims(p as Record<string, unknown>);
     } catch (e: any) {
       return { active: false, reason: `JWT verification failed: ${e?.code ?? e?.message ?? "invalid"}` }; // no token/key echo
     }
   }
+}
+
+/** Map a VERIFIED JWT payload to the introspection shape (SMART claims: scope/scp, azp fallback,
+ * patient/encounter/fhirUser, purpose_of_use/pou). Shared with the OIDC strategy's JWKS fallback. */
+export function mapJwtClaims(p: Record<string, unknown>): IntrospectionResult {
+  const scopeClaim = p.scope ?? p.scp;
+  const scope = Array.isArray(scopeClaim) ? scopeClaim.join(" ") : typeof scopeClaim === "string" ? scopeClaim : "";
+  return {
+    active: true,
+    sub: typeof p.sub === "string" ? p.sub : undefined,
+    client_id: (p.client_id ?? p.azp) as string | undefined,
+    scope,
+    exp: typeof p.exp === "number" ? p.exp : undefined,
+    iat: typeof p.iat === "number" ? p.iat : undefined,
+    iss: typeof p.iss === "string" ? p.iss : undefined,
+    aud: p.aud as string | string[] | undefined,
+    token_type: "Bearer",
+    patient: p.patient as string | undefined,
+    encounter: p.encounter as string | undefined,
+    fhirUser: p.fhirUser as string | undefined,
+    purposeOfUse: (p.purpose_of_use ?? p.pou) as string | undefined,
+  };
 }
