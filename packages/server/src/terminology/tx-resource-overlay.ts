@@ -223,6 +223,14 @@ export class TxOverlay {
       case "descendent-of": { const set = descendants(f.value, false); return (code) => set.has(code); }
       case "child-of": { const kids = new Set(cs.concepts.get(f.value)?.children ?? []); return (code) => kids.has(code); }
       case "regex": {
+        // ReDoS guard: a quantified group followed by another quantifier is
+        // exponential under JS backtracking — the tx-ecosystem regex-bad suite
+        // sends (a+)+ / ((a+)+)+ against 56-char codes precisely to wedge
+        // servers (a sync .test() cannot be interrupted; this froze the event
+        // loop for good). Star-height>1 and oversized patterns are refused as
+        // too costly (→ clause unexpandable → OperationOutcome), matching the
+        // battery's expected "took too long to evaluate" behavior.
+        if (f.value.length > 256 || /\([^()]*[+*{][^()]*\)\s*[+*?{]/.test(f.value)) return null;
         try { const re = new RegExp(`^(?:${f.value})$`); return (code) => re.test(code); }
         catch { return () => false; } // invalid regex matches nothing (regex-bad tests)
       }

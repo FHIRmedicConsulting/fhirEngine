@@ -155,7 +155,9 @@ is the sanctioned workaround.
   `CodeSystemAsParameter` is now declared (honestly) in the CapabilityStatement;
   `test-version` remains deliberately undeclared until the battery passes.
 - 📊 Battery after overlay: **91 of 597 passing (was 0/597)**; server survives
-  the full run (circular-import cases guarded). Remaining failures by suite:
+  the full run (circular-import cases guarded; regex-bad ReDoS bombs refused —
+  star-height>1 filter patterns are rejected up front since a synchronous
+  RegExp.test() cannot be interrupted). Remaining failures by suite:
   version 202, validation 47, permutations 44, parameters 34, language 26+16,
   overload 25, notSelectable 16, extensions 11, deprecated 11, simple-cases 9.
 - ⏳ Remaining: version-pinning semantics (system-version/check/force — the

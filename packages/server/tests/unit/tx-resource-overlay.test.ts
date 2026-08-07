@@ -108,6 +108,31 @@ describe("TxOverlay expansion", () => {
     expect(overlay.validate(a.url, { system: CS.url, code: "child1" })).toBeNull();
   });
 
+  it("catastrophic-backtracking regex filters are refused, not evaluated (ReDoS)", () => {
+    const evilCs = {
+      resourceType: "CodeSystem", url: "http://example.org/test/cs-redos", content: "complete",
+      concept: [{ code: "a".repeat(56) + "Y", display: "regex bomb subject" }],
+    };
+    const evilVs = {
+      resourceType: "ValueSet", url: "http://example.org/test/vs-redos",
+      compose: { include: [{ system: evilCs.url, filter: [{ property: "code", op: "regex", value: "((a+)+)+" }] }] },
+    };
+    const overlay = new TxOverlay();
+    overlay.register(evilCs); overlay.register(evilVs);
+    const started = Date.now();
+    const r = overlay.expand(evilVs, {});
+    expect(Date.now() - started).toBeLessThan(1000); // must not spin
+    expect(r.error).toContain("cannot be expanded");
+    // Sane regex filters still work.
+    const okVs = {
+      resourceType: "ValueSet", url: "http://example.org/test/vs-regex-ok",
+      compose: { include: [{ system: CS.url, filter: [{ property: "code", op: "regex", value: "child[0-9]+" }] }] },
+    };
+    overlay.register(CS); overlay.register(okVs);
+    const ok = overlay.expand(okVs, {});
+    expect(ok.valueSet.expansion.contains.map((c: any) => c.code).sort()).toEqual(["child1", "child2"]);
+  });
+
   it("diamond imports (shared non-circular dependency) still expand", () => {
     const d = { resourceType: "ValueSet", url: "http://example.org/test/vs-d",
       compose: { include: [{ system: CS.url, concept: [{ code: "other" }] }] } };
