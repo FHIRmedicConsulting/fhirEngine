@@ -66,10 +66,13 @@ describe("refresh tokens", () => {
     expect(takeRefresh(t)).toBeNull();
   });
 
-  it("expires after the TTL (default 30 days)", () => {
+  it("expires after the TTL (default 90 days — (g)(10) requires ≥3 months)", () => {
     const t = putRefresh(rg);
-    vi.advanceTimersByTime(31 * 24 * 60 * 60 * 1000);
-    expect(takeRefresh(t)).toBeNull();
+    vi.advanceTimersByTime(89 * 24 * 60 * 60 * 1000 + 60_000);
+    expect(takeRefresh(t)).toMatchObject(rg); // still valid inside 90 days (rotated by this take)
+    const t2 = putRefresh(rg);
+    vi.advanceTimersByTime(91 * 24 * 60 * 60 * 1000);
+    expect(takeRefresh(t2)).toBeNull();
   });
 
   it("survives until just before the TTL", () => {

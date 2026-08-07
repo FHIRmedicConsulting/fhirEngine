@@ -48,7 +48,12 @@ export function takeCode(code: string): AuthCode | null {
   return c.expiresAt > now() ? c : null;
 }
 
-export function putRefresh(data: Omit<RefreshGrant, "expiresAt">, ttlSeconds = 60 * 60 * 24 * 30): string {
+// (g)(10) §170.315(g)(10)(v)(A): patient apps must receive refresh tokens valid for AT LEAST
+// 3 months without re-authorization. Default 90 days; FHIRENGINE_OAUTH_REFRESH_TTL_SECONDS overrides.
+const refreshTtlDefault = (): number =>
+  Number(process.env.FHIRENGINE_OAUTH_REFRESH_TTL_SECONDS) || 60 * 60 * 24 * 90;
+
+export function putRefresh(data: Omit<RefreshGrant, "expiresAt">, ttlSeconds = refreshTtlDefault()): string {
   const t = token();
   refresh.set(t, { ...data, expiresAt: now() + ttlSeconds * 1000 });
   return t;

@@ -655,3 +655,30 @@ scan the session's returned resources.
 
 **Remaining for full (g)(10):** groups 4/5/6/12 (other US Core versions — only if certifying
 those), Visual Inspection attestations (group 11), TLS suite.
+
+---
+
+## Run 16 (2026-08-06) — Attestations (group 11) answered honestly: 11 pass, 3 deployment-layer gaps
+
+Visual Inspection and Attestation run with truthful answers: **11 pass / 3 fail**. The fails are
+the three items attested FALSE — they are deployment-layer responsibilities, not server defects,
+and now form the deployer checklist for a real certification:
+1. **Consent GUI** — fhirEngine's authorize is headless auto-approve; a patient-facing
+   resource-level authorization UI must come from the deploying organization's portal/IdP.
+2. **Offline-access notification** — same root: no authorization UI to present the notice.
+3. **Public service-base-URL publication** — organizational/deployment step.
+
+**Product fix from the attestation audit:** refresh-token default TTL was 30 days —
+(g)(10) §170.315(g)(10)(v)(A) requires ≥3 months for patient apps. Now **90 days** by default
+(`FHIRENGINE_OAUTH_REFRESH_TTL_SECONDS` overrides); unit test updated.
+
+All other attestations (registration, token validation, multi-patient scopes, JWKS caching,
+native refresh, rotation, bulk `_since`, docs) attested TRUE with evidence notes pointing at the
+implementing code and prior runs.
+
+**(g)(10) scoreboard after Runs 12–16:** every functional group passes with only plain-HTTP TLS
+fails — Standalone Full/Limited, EHR Practitioner, Additional Authorization (134), Multi-Patient
+STU1+STU2, Single Patient API US Core 6.1.0 (200), attestations modulo the 3 deployment items.
+Remaining: serve the suite over TLS (server has the listener; validator truststore import from
+Run 11 may still hold) and re-run to clear the TLS checks; optionally other US Core version
+groups; richer data to convert data-absent skips.
