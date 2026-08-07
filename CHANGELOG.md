@@ -6,6 +6,8 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.7] - 2026-08-07
+
 ### Added (CDF-incremental promotion)
 - **`fhirengine-promote --incremental`** (ADR-0026 optimization): reads the Bronze Change Data
   Feed since the last promoted version (watermark in `gold/promote_state`), re-derives
@@ -320,7 +322,8 @@ Audit-backlog batch (2026-07-05):
   components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). CARIN
   BB / PDex **profile conformance** (validating against those profiles) still requires IG install (L5).
 
-[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.6...main
+[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.7...main
+[0.1.0-alpha.7]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
