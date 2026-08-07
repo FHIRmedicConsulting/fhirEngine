@@ -5,7 +5,7 @@ _Living snapshot of where the project is._
 **Product:** open-source (Apache-2.0), no-Databricks FHIR R4 server on OSS Delta Lake
 (delta-rs / DataFusion via a Python sidecar; TypeScript/Hono REST tier). Local-first.
 
-**Health:** **210 integration + 386 unit + 18 sidecar (pytest) green · typecheck + lint clean · CI hardened**
+**Health:** **227 integration + 444 unit + 18 sidecar (pytest) green · typecheck + lint clean · CI hardened**
 (unit · supply-chain audit/SBOM/pip-audit · gitleaks+Trivy scan · integration w/ fail-hard sidecar +
 boot smoke · release workflow). Two internal deep reviews (2026-07-02, and the OSS-alpha
 review 2026-07-04) fully addressed

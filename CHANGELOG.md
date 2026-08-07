@@ -6,6 +6,8 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.8] - 2026-08-07
+
 ### Added (tooling)
 - **`fhirengine-bench` scale-benchmark harness** — ingest throughput + search-latency
   percentiles (p50/p90/p95/p99), plus optional promote (full + incremental) and optimize
@@ -367,7 +369,8 @@ Audit-backlog batch (2026-07-05):
   components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). CARIN
   BB / PDex **profile conformance** (validating against those profiles) still requires IG install (L5).
 
-[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.7...main
+[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.8...main
+[0.1.0-alpha.8]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.4...v0.1.0-alpha.5

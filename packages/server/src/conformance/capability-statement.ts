@@ -16,7 +16,7 @@ import { subscriptionsEnabled } from "../subscriptions/dispatcher.js";
 import { knownTopicCanonicals } from "../subscriptions/topics.js";
 import type { DeltaWarehouse } from "../lib/delta-warehouse.js";
 
-const SOFTWARE_VERSION = "0.1.0-alpha.7";
+const SOFTWARE_VERSION = "0.1.0-alpha.8";
 
 export async function buildCapabilityStatement(wh: DeltaWarehouse, baseUrl: string): Promise<Record<string, unknown>> {
   const profilesByType = new Map<string, string[]>();
