@@ -21,6 +21,8 @@ import { udapEnabled } from "./auth/udap/udap-routes.js";
 import { loadRegisteredClients } from "./auth/udap/registered-clients.js";
 import type { RateLimitStore } from "./security/rate-limit.js";
 import { RedisRateLimitStore, type RedisEvalClient } from "./security/redis-rate-limit-store.js";
+import { setOAuthStoreBackend } from "./auth/oauth/store.js";
+import { RedisOAuthStore, type RedisOAuthClient } from "./auth/oauth/redis-oauth-store.js";
 
 
 
@@ -38,6 +40,23 @@ async function buildSharedRateLimitStore(logger: typeof log): Promise<RateLimitS
   } catch {
     logger.error("FHIRENGINE_RATE_LIMIT_STORE=redis but `ioredis` is not installed (run `npm i ioredis`) — using per-node store");
     return undefined;
+  }
+}
+
+/** Wire the Redis-backed OAuth store when FHIRENGINE_OAUTH_STORE=redis; else keep the in-memory
+ *  default. Redis makes codes/refresh-tokens/jti restart-durable and multi-instance-consistent —
+ *  with the memory store a restart silently revokes every app's (90-day) offline access. */
+async function configureOAuthStore(logger: typeof log): Promise<void> {
+  if (process.env.FHIRENGINE_OAUTH_STORE !== "redis") return;
+  const url = process.env.FHIRENGINE_REDIS_URL;
+  if (!url) { logger.error("FHIRENGINE_OAUTH_STORE=redis but FHIRENGINE_REDIS_URL is unset — using in-memory store"); return; }
+  try {
+    const mod = "ioredis"; // non-literal → not statically resolved (optional runtime dep)
+    const { default: Redis } = (await import(mod)) as { default: new (u: string) => RedisOAuthClient };
+    setOAuthStoreBackend(new RedisOAuthStore(new Redis(url)));
+    logger.info("oauth store: shared Redis backend enabled");
+  } catch {
+    logger.error("FHIRENGINE_OAUTH_STORE=redis but `ioredis` is not installed (run `npm i ioredis`) — using in-memory store");
   }
 }
 
@@ -72,6 +91,7 @@ async function main(): Promise<void> {
   // Optional shared rate-limit store for multi-node deployments (FHIRENGINE_RATE_LIMIT_STORE=redis).
   // Lazy-loads a Redis client so single-node deployments carry no Redis dependency.
   const rateLimitStore = await buildSharedRateLimitStore(log);
+  await configureOAuthStore(log);
 
   const app = createDeltaApp({ warehouse, baseUrl: publicUrl, rateLimitStore });
 

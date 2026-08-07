@@ -148,7 +148,7 @@ export function oauthRoutes(baseUrl: string): Hono {
     }
     const scope = applyScopeSubstitutions(normalizeScopesToV2(p.scope ?? ""));
     const { patient, encounter, user } = launchContext(scope);
-    const code = putCode({ clientId: clientId!, redirectUri, scope, codeChallenge: p.code_challenge, codeChallengeMethod: p.code_challenge_method, patient, encounter, user, nonce: p.nonce });
+    const code = await putCode({ clientId: clientId!, redirectUri, scope, codeChallenge: p.code_challenge, codeChallengeMethod: p.code_challenge_method, patient, encounter, user, nonce: p.nonce });
     return back({ code });
   });
 
@@ -174,7 +174,7 @@ export function oauthRoutes(baseUrl: string): Hono {
         // Advertised signing algs only (token_endpoint_auth_signing_alg_values_supported).
         const { payload } = await jwtVerify(assertion, keySet, { audience: `${baseUrl}/oauth/token`, algorithms: ["RS256", "ES384"] });
         if (payload.iss !== cid || payload.sub !== cid) return null;
-        if (!payload.jti || jtiReplay(String(payload.jti))) return null;
+        if (!payload.jti || (await jtiReplay(String(payload.jti)))) return null;
         return cid!;
       } catch { return null; }
     };
@@ -229,13 +229,13 @@ export function oauthRoutes(baseUrl: string): Hono {
       }
       if (/(^|\s)openid(\s|$)/.test(grant.scope)) resp.id_token = await signIdToken({ sub, iss, clientId: clientId!, fhirUser: grant.user, nonce: grant.nonce });
       if (withRefresh && /(^|\s)offline_access(\s|$)/.test(grant.scope)) {
-        resp.refresh_token = putRefresh({ clientId: clientId!, scope: grant.scope, patient: grant.patient, encounter: grant.encounter, user: grant.user });
+        resp.refresh_token = await putRefresh({ clientId: clientId!, scope: grant.scope, patient: grant.patient, encounter: grant.encounter, user: grant.user });
       }
       return c.json(resp, 200, { "Cache-Control": "no-store", Pragma: "no-cache" });
     };
 
     if (grantType === "authorization_code") {
-      const codeRec = takeCode(body.get("code") ?? "");
+      const codeRec = await takeCode(body.get("code") ?? "");
       if (!codeRec) return err("invalid_grant", "code invalid or expired");
       if (codeRec.clientId !== clientId) return err("invalid_grant", "client mismatch");
       if (codeRec.redirectUri !== body.get("redirect_uri")) return err("invalid_grant", "redirect_uri mismatch");
@@ -246,7 +246,7 @@ export function oauthRoutes(baseUrl: string): Hono {
     }
 
     if (grantType === "refresh_token") {
-      const g = takeRefresh(body.get("refresh_token") ?? "");
+      const g = await takeRefresh(body.get("refresh_token") ?? "");
       if (!g || g.clientId !== clientId) return err("invalid_grant", "refresh_token invalid or expired");
       const scope = body.get("scope") ?? g.scope; // may narrow, not widen (not enforced here)
       return issue({ scope, patient: g.patient, encounter: g.encounter, user: g.user }, true);

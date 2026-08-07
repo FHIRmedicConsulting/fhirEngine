@@ -69,7 +69,10 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_OAUTH_ENABLED` | off | Run `/oauth/authorize` + `/oauth/token` + JWKS. |
 | `FHIRENGINE_OAUTH_PRIVATE_KEY` / `FHIRENGINE_OAUTH_PUBLIC_KEY` | ephemeral | Static signing keys (PEM). **_req(prod)_ when OAuth enabled** (ephemeral keys rotate on restart). |
 | `FHIRENGINE_OAUTH_CLIENTS` | dev-open | JSON array of registered clients (locks client_id + redirect_uris). |
-| `FHIRENGINE_OAUTH_DEFAULT_PATIENT` / `FHIRENGINE_OAUTH_DEFAULT_USER` | — | Dev auto-approve launch context. |
+| `FHIRENGINE_OAUTH_DEFAULT_PATIENT` / `FHIRENGINE_OAUTH_DEFAULT_USER` | — | Dev auto-approve launch context (`FHIRENGINE_OAUTH_DEFAULT_ENCOUNTER` adds EHR-launch encounter context). |
+| `FHIRENGINE_OAUTH_STORE` | in-memory | `redis` = restart-durable + multi-instance codes/refresh-tokens/jti (lazy-loads `ioredis`; needs `FHIRENGINE_REDIS_URL`). **Recommended in prod** — the in-memory store silently revokes all offline access on restart. |
+| `FHIRENGINE_OAUTH_REFRESH_TTL_SECONDS` | 7776000 | Refresh-token lifetime (default 90 days; (g)(10) requires ≥3 months for patient apps). |
+| `FHIRENGINE_OAUTH_SCOPE_SUBSTITUTIONS` | — | JSON map of requested scope → granular replacement scopes (headless consent narrowing; see (g)(10) Run 13). |
 
 ## UDAP B2B trust (ADR-0036; opt-in)
 
@@ -101,7 +104,7 @@ writer, ADR-0026), `GOOGLE_SERVICE_ACCOUNT`, `AZURE_STORAGE_ACCOUNT_NAME`, `AZUR
 | `FHIRENGINE_RATE_LIMIT_ENABLED` | prod on / dev off | Per-client rate limiting. |
 | `FHIRENGINE_RATE_LIMIT_RPM` | `600` | Requests per client per minute. |
 | `FHIRENGINE_RATE_LIMIT_STORE` | per-node | `redis` for shared limits across instances (lazy-loads `ioredis` — `npm i ioredis`). |
-| `FHIRENGINE_REDIS_URL` | — | `redis://…` when `FHIRENGINE_RATE_LIMIT_STORE=redis`. |
+| `FHIRENGINE_REDIS_URL` | — | `redis://…` when `FHIRENGINE_RATE_LIMIT_STORE=redis` or `FHIRENGINE_OAUTH_STORE=redis`. |
 | `FHIRENGINE_MAX_BODY_BYTES` | `10485760` | Request body cap (10 MiB) → 413. |
 
 ## Maintenance & misc

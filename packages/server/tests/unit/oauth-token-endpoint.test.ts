@@ -48,14 +48,14 @@ function tokenReq(params: Record<string, string>): Promise<Response> {
   });
 }
 
-function mintCode(clientId: string): string {
+function mintCode(clientId: string): Promise<string> {
   return putCode({ clientId, redirectUri: "https://app.example/cb", scope: "patient/*.read", patient: "pat-1" });
 }
 
 describe("asymmetric confidential client on the authorization_code grant", () => {
   it("REJECTS a code exchange with no client_assertion (the fixed fall-open)", async () => {
     const res = await tokenReq({
-      grant_type: "authorization_code", code: mintCode("asym-app"),
+      grant_type: "authorization_code", code: await mintCode("asym-app"),
       redirect_uri: "https://app.example/cb", client_id: "asym-app",
     });
     expect(res.status).toBe(401);
@@ -64,7 +64,7 @@ describe("asymmetric confidential client on the authorization_code grant", () =>
 
   it("accepts a code exchange with a valid private_key_jwt assertion", async () => {
     const res = await tokenReq({
-      grant_type: "authorization_code", code: mintCode("asym-app"),
+      grant_type: "authorization_code", code: await mintCode("asym-app"),
       redirect_uri: "https://app.example/cb", client_id: "asym-app",
       client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
       client_assertion: await assertion("asym-app", goodKeys.privateKey as CryptoKey),
@@ -77,7 +77,7 @@ describe("asymmetric confidential client on the authorization_code grant", () =>
 
   it("rejects an assertion signed by the wrong key", async () => {
     const res = await tokenReq({
-      grant_type: "authorization_code", code: mintCode("asym-app"),
+      grant_type: "authorization_code", code: await mintCode("asym-app"),
       redirect_uri: "https://app.example/cb", client_id: "asym-app",
       client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
       client_assertion: await assertion("asym-app", evilKeys.privateKey as CryptoKey),
@@ -91,13 +91,13 @@ describe("asymmetric confidential client on the authorization_code grant", () =>
       grant_type: "authorization_code", code, redirect_uri: "https://app.example/cb", client_id: "asym-app",
       client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer", client_assertion: a,
     });
-    expect((await tokenReq(params(mintCode("asym-app")))).status).toBe(200);
-    expect((await tokenReq(params(mintCode("asym-app")))).status).toBe(401); // same jti again
+    expect((await tokenReq(params(await mintCode("asym-app")))).status).toBe(200);
+    expect((await tokenReq(params(await mintCode("asym-app")))).status).toBe(401); // same jti again
   });
 
   it("rejects an assertion whose iss/sub is a different client", async () => {
     const res = await tokenReq({
-      grant_type: "authorization_code", code: mintCode("asym-app"),
+      grant_type: "authorization_code", code: await mintCode("asym-app"),
       redirect_uri: "https://app.example/cb", client_id: "asym-app",
       client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
       client_assertion: await assertion("symmetric-app", goodKeys.privateKey as CryptoKey),
@@ -109,7 +109,7 @@ describe("asymmetric confidential client on the authorization_code grant", () =>
 describe("confidential client with no secret and no key", () => {
   it("can never authenticate (fail closed)", async () => {
     const res = await tokenReq({
-      grant_type: "authorization_code", code: mintCode("secretless-app"),
+      grant_type: "authorization_code", code: await mintCode("secretless-app"),
       redirect_uri: "https://app.example/cb", client_id: "secretless-app",
     });
     expect(res.status).toBe(401);
@@ -120,7 +120,7 @@ describe("confidential client with no secret and no key", () => {
 describe("token introspection (RFC 7662)", () => {
   async function mintAccessToken(): Promise<{ access: string; scope: string }> {
     const res = await tokenReq({
-      grant_type: "authorization_code", code: mintCode("symmetric-app"),
+      grant_type: "authorization_code", code: await mintCode("symmetric-app"),
       redirect_uri: "https://app.example/cb", client_id: "symmetric-app", client_secret: "s3cret",
     });
     const tok = await res.json();
