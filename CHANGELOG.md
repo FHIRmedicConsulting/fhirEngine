@@ -6,6 +6,12 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (tooling)
+- **`fhirengine-bench` scale-benchmark harness** — ingest throughput + search-latency
+  percentiles (p50/p90/p95/p99), plus optional promote (full + incremental) and optimize
+  timings, against a real delta-rs store driving the in-process app. Deterministic synthetic
+  population (reproducible per seed); JSON + human report. Docs: `docs/standalone/benchmarking.md`.
+
 ### Added (probabilistic MPI — ADR-0012 v2)
 - **`POST /Patient/$match`** (FHIR patient-match operation): a seed Patient is scored against
   stored candidates via **Fellegi-Sunter** record linkage (Jaro-Winkler name similarity,

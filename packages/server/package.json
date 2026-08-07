@@ -12,6 +12,7 @@
     "init": "tsx scripts/fhirengine-init.ts",
     "promote": "tsx scripts/fhirengine-promote.ts",
     "sls": "tsx scripts/fhirengine-sls.ts",
+    "bench": "tsx scripts/fhirengine-bench.ts",
     "build:deps": "tsc -p ../fhir-types/tsconfig.json",
     "build": "tsc",
     "prebuild": "npm run build:deps",
