@@ -6,6 +6,35 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+## [0.1.0-alpha.6] - 2026-08-06
+
+### Conformance — Inferno (g)(10) campaign complete (Runs 14-17)
+- **Every functional (g)(10) group passes with ZERO test failures over TLS** (Runs 12-17;
+  676 passes across Standalone Full/Limited, EHR Practitioner, Additional Authorization,
+  Multi-Patient STU1+STU2, Single Patient API US Core 6.1.0). Attestations carry 3 declared
+  deployment-layer gaps (consent GUI, offline-access notice, public base-URL publication).
+  Detail + reproduction mechanics: `docs/standalone/inferno-g10-findings.md`.
+
+### Security / correctness (found by the harness)
+- **Bulk manifest `requiresAccessToken` now mirrors the auth gate** — it was hardcoded `false`
+  while the gate protected `/_export-file`, so conformant clients fetched NDJSON tokenless and
+  got 401 OperationOutcomes as content.
+- **POST `/Type/_search` is scope-checked as a SEARCH** — the generic POST→create verb mapping
+  403'd conformant POST-search clients holding read/search-only scopes.
+- **The patient-compartment filter applies only to compartment types** — Practitioner/
+  Organization/Medication/Location carry no patient reference, so the filter could never match:
+  patient-context reads of referenced providers 404'd and medication `_include`s came back empty.
+  `Patient` itself and the `Resource` pseudo-type stay filtered ($export population gate intact).
+- **Refresh-token default TTL raised to 90 days** ((g)(10) §170.315(g)(10)(v)(A) requires ≥3
+  months for patient apps); `FHIRENGINE_OAUTH_REFRESH_TTL_SECONDS` overrides.
+
+### Added
+- **Persisted OAuth store** — pluggable backend for auth codes / refresh tokens / jti replay:
+  `FHIRENGINE_OAUTH_STORE=redis` + `FHIRENGINE_REDIS_URL` selects a restart-durable, shared
+  Redis backend (atomic GETDEL takes, SET NX PX jti, native expiry; lazy `ioredis` import).
+  The in-memory default silently revoked all offline access on restart — unacceptable with
+  90-day refresh tokens; Redis is recommended for production.
+
 ### Added (search completeness)
 - **Composite search parameters** for Observation (`code-value-quantity|concept|date|string` +
   `combo-`/`component-` variants) with true **same-element semantics**: composite pairs are
@@ -250,7 +279,8 @@ Audit-backlog batch (2026-07-05):
   components pending a component-disclosure/ADR (see `docs/standalone/cms-0057-b2b-apis-plan.md`). CARIN
   BB / PDex **profile conformance** (validating against those profiles) still requires IG install (L5).
 
-[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.5...main
+[Unreleased]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.6...main
+[0.1.0-alpha.6]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/FHIRmedicConsulting/fhirEngine/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
