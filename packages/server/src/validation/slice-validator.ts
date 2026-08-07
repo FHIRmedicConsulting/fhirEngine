@@ -4,8 +4,10 @@
  *  - Handles **value / pattern** discriminators (the dominant case: category/code/system
  *    slices). `exists`, `type`, `profile` discriminators → the slicing is skipped (not
  *    faked) so we never false-reject.
- *  - Enforces **required slices** (min ≥ 1): an instance must contain ≥ min elements
- *    matching the slice's discriminator fixed values. (max / closed-rules deferred.)
+ *  - Enforces **required slices** (min ≥ 1), **max cardinality** per slice, and **closed
+ *    slicing rules** (every element must match a defined slice — enforced only when every
+ *    declared slice's discriminators were extractable, so unsupported discriminators can
+ *    never cause a false rejection).
  *  - Discriminator fixed values are read from the slice's sub-elements by `id`
  *    (`<path>:<sliceName>.<discriminatorPath>` → fixed[x]/pattern[x]), or the slice
  *    element's own fixed/pattern navigated by the discriminator path.
@@ -17,8 +19,14 @@
 import fhirpath from "fhirpath";
 import type { ValidationIssue } from "./structural-validator.js";
 
-interface SliceDef { sliceName: string; min: number; discriminators: Array<{ path: string; value: unknown }> }
-export interface Slicing { path: string; slices: SliceDef[] }
+interface SliceDef { sliceName: string; min: number; max: number; discriminators: Array<{ path: string; value: unknown }> }
+export interface Slicing {
+  path: string;
+  slices: SliceDef[];
+  /** `closed` slicing rules are enforced (every element must match a defined slice) ONLY when
+   * every declared slice's discriminators were extractable — otherwise conservatively open. */
+  closed: boolean;
+}
 
 function fixedOrPatternValue(el: any): unknown {
   for (const k of Object.keys(el)) {
@@ -47,9 +55,10 @@ export function extractSlicings(snapshot: { element?: any[] }): Slicing[] {
     const disc = e.slicing?.discriminator;
     if (!disc) continue;
     const slices: SliceDef[] = [];
+    let allSupported = true;
     for (const s of els.filter((x) => x.path === e.path && x.sliceName && x.id?.startsWith(`${e.path}:`))) {
       const min = Number(s.min) || 0;
-      if (min < 1) continue; // only required slices enforced (first cut)
+      const max = s.max === "*" || s.max === undefined ? Infinity : Number(s.max) || 0;
       let supported = true;
       const discriminators: Array<{ path: string; value: unknown }> = [];
       for (const d of disc) {
@@ -62,9 +71,11 @@ export function extractSlicings(snapshot: { element?: any[] }): Slicing[] {
         if (val === undefined || typeof val === "object") { supported = false; break; } // need a scalar
         discriminators.push({ path: d.path, value: val });
       }
-      if (supported && discriminators.length) slices.push({ sliceName: s.sliceName, min, discriminators });
+      if (supported && discriminators.length) slices.push({ sliceName: s.sliceName, min, max, discriminators });
+      else allSupported = false;
     }
-    if (slices.length) out.push({ path: e.path, slices });
+    const closed = e.slicing?.rules === "closed" && allSupported && slices.length > 0;
+    if (slices.some((s) => s.min >= 1 || s.max !== Infinity) || closed) out.push({ path: e.path, slices, closed });
   }
   return out;
 }
@@ -81,15 +92,33 @@ export function validateSlices(resource: Record<string, unknown>, slicings: Slic
     } catch {
       continue;
     }
+    const matchedAny = new Array<boolean>(collection.length).fill(false);
     for (const slice of sl.slices) {
       let count = 0;
-      for (const elem of collection) {
-        if (matchesSlice(elem, slice.discriminators)) count++;
-      }
+      collection.forEach((elem, i) => {
+        if (matchesSlice(elem, slice.discriminators)) { count++; matchedAny[i] = true; }
+      });
       if (count < slice.min) {
         issues.push({
           path: sl.path,
           message: `required slice '${slice.sliceName}' (min ${slice.min}) not satisfied — found ${count} matching`,
+        });
+      }
+      if (count > slice.max) {
+        issues.push({
+          path: sl.path,
+          message: `slice '${slice.sliceName}' (max ${slice.max}) exceeded — found ${count} matching`,
+        });
+      }
+    }
+    // Closed slicing: every element must belong to SOME defined slice (only enforced when
+    // every declared slice's discriminators were extractable — see extractSlicings).
+    if (sl.closed) {
+      const strays = matchedAny.filter((m) => !m).length;
+      if (strays > 0) {
+        issues.push({
+          path: sl.path,
+          message: `closed slicing violated — ${strays} element(s) match no defined slice`,
         });
       }
     }

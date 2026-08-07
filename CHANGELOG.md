@@ -6,6 +6,16 @@ All notable changes to fhirEngine are documented here. Format based on
 
 ## [Unreleased]
 
+### Added (validation depth)
+- **Invariant contexts at any depth** — L4 FHIRPath constraint contexts are resolved by a full
+  path walk (arrays fan out at every level; `value[x]` segments match the present choice
+  property). Previously only top-level and one-level contexts evaluated; deeper constraints
+  (e.g. `Questionnaire.item.item`) were silently skipped.
+- **Slice max cardinality + closed slicing rules** — per-slice `max` is enforced, and `closed`
+  slicings require every element to match a defined slice. Closed enforcement is conservative:
+  it applies only when every declared slice's discriminators were extractable, so unsupported
+  discriminator types can never cause a false rejection.
+
 ### Added (consent policy knobs)
 - **Deployment-configurable consent policy** (ADR-0018 §5.2 v1.x — the last consent-gate
   follow-up): `FHIRENGINE_CONSENT_POLICY` (`{"user":{"restricted","sensitivity"}}` with
